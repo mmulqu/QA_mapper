@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-24T12:00:00-04:00",
+  "title": "Design System: MAD QA Workbench",
+  "extensions": {
+    "colorMeta": {
+      "blueprint": {
+        "role": "primary",
+        "displayName": "Blueprint Ink",
+        "canonical": "#174d6d",
+        "tonalRamp": ["#071c28", "#0d3044", "#174d6d", "#2d6d8e", "#6093aa", "#91b6c5", "#c3d7de", "#edf4f5"]
+      },
+      "accepted-green": {
+        "role": "secondary",
+        "displayName": "Accepted Field Green",
+        "canonical": "#287044",
+        "tonalRamp": ["#0b2816", "#154226", "#287044", "#4c8f65", "#78ae89", "#a5cbb0", "#d1e7d7", "#f0f8f2"]
+      },
+      "evidence-red": {
+        "role": "secondary",
+        "displayName": "Evidence Vermilion",
+        "canonical": "#b63d31",
+        "tonalRamp": ["#3b100c", "#6a2119", "#963128", "#b63d31", "#ce685e", "#df958e", "#edc1bd", "#faecea"]
+      },
+      "cool-paper": {
+        "role": "neutral",
+        "displayName": "Cool Drafting Paper",
+        "canonical": "#e9edeb",
+        "tonalRamp": ["#1b201e", "#353b38", "#545c58", "#747d79", "#969e9a", "#b8bfbc", "#d7dcda", "#f5f7f6"]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Protected Title",
+        "purpose": "Product and selected-record titles."
+      },
+      "body": {
+        "displayName": "Review Copy",
+        "purpose": "Agent reasoning and evidence explanations."
+      },
+      "data": {
+        "displayName": "Verifiable Data",
+        "purpose": "Identifiers, coordinates, operations, versions, and hashes."
+      }
+    },
+    "shadows": [
+      {
+        "name": "map-instrument",
+        "value": "3px 4px 12px rgba(16, 35, 46, 0.16)",
+        "purpose": "Temporary map controls."
+      },
+      {
+        "name": "protected-sheet",
+        "value": "8px 10px 24px rgba(18, 36, 45, 0.16)",
+        "purpose": "The human approval gate."
+      }
+    ],
+    "motion": [
+      {
+        "name": "sheet-settle",
+        "value": "420ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Approval sheet entering the protected review plane."
+      }
+    ],
+    "breakpoints": [
+      { "name": "compact-desktop", "value": "1280px" },
+      { "name": "off-canvas-docket", "value": "1040px" },
+      { "name": "stacked-review", "value": "800px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Accept Proposal Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The protected human approval action.",
+      "html": "<button class=\"ds-accept\">Accept proposal</button>",
+      "css": ".ds-accept { height: 34px; padding: 0 13px; color: #fff; background: #287044; border: 1px solid #1d5934; border-radius: 2px; font: 650 12px/1 \"Segoe UI\", Arial, sans-serif; } .ds-accept:hover { background: #1d6138; } .ds-accept:focus-visible { outline: none; box-shadow: 0 0 0 3px #fff, 0 0 0 5px #0d638f; }"
+    },
+    {
+      "name": "Return Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Returns a proposal for revision without implying destructive deletion.",
+      "html": "<button class=\"ds-return\">Return</button>",
+      "css": ".ds-return { height: 34px; padding: 0 13px; color: #b63d31; background: #f7f8f5; border: 1px solid #b63d31; border-radius: 2px; font: 650 12px/1 \"Segoe UI\", Arial, sans-serif; } .ds-return:hover { color: #fff; background: #b63d31; } .ds-return:focus-visible { outline: none; box-shadow: 0 0 0 3px #fff, 0 0 0 5px #0d638f; }"
+    },
+    {
+      "name": "Coordinate Field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "A compact machine-readable geometry field.",
+      "html": "<input class=\"ds-coordinate\" value=\"42.266180\" aria-label=\"Latitude\">",
+      "css": ".ds-coordinate { width: 150px; padding: 8px 9px; color: #1d2b32; background: #fff; border: 1px solid #859397; border-radius: 1px; font: 10px/1.35 \"Cascadia Code\", Consolas, monospace; } .ds-coordinate:focus { outline: none; box-shadow: 0 0 0 3px #fff, 0 0 0 5px #0d638f; }"
+    },
+    {
+      "name": "Evidence Tag",
+      "kind": "custom",
+      "description": "A numbered source tag with a field-record leader.",
+      "html": "<span class=\"ds-evidence-tag\">01</span>",
+      "css": ".ds-evidence-tag { position: relative; width: 26px; height: 23px; color: #fff; background: #174d6d; display: grid; place-items: center; font: 800 8px/1 \"Cascadia Code\", Consolas, monospace; } .ds-evidence-tag::after { content: \"\"; position: absolute; right: -5px; top: 8px; width: 9px; height: 1px; background: #174d6d; }"
+    },
+    {
+      "name": "Folio Tab",
+      "kind": "nav",
+      "description": "A ruled review-section tab with a short blueprint locator.",
+      "html": "<button class=\"ds-folio-tab\" aria-current=\"page\">Review</button>",
+      "css": ".ds-folio-tab { position: relative; height: 39px; padding: 0 22px; color: #174d6d; background: #f7f8f5; border: 0; border-right: 1px solid #b8c2c0; font: 600 10px/1 \"Segoe UI\", Arial, sans-serif; } .ds-folio-tab::after { content: \"\"; position: absolute; left: 14px; right: 14px; bottom: 0; height: 2px; background: #174d6d; } .ds-folio-tab:focus-visible { outline: none; box-shadow: inset 0 0 0 2px #0d638f; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Survey Evidence Dossier",
+    "overview": "The interface borrows from municipal survey packets and registry records. It feels exact, workmanlike, and consequential: every mark has a source, and every proposed change can be challenged. The live map is the shared working surface, with an on-demand feature inspector.",
+    "keyCharacteristics": [
+      "Cool drafting-paper surfaces with blueprint navy and sparing evidence inks",
+      "Precise square geometry, one-pixel rules, and registration marks",
+      "A dominant map workspace with a persistent case queue and on-demand feature inspector",
+      "Visible identifiers, timestamps, sources, and relationship paths",
+      "State changes that read as evidence annotations and approval stamps"
+    ],
+    "rules": [
+      {
+        "name": "The Evidence Ink Rule",
+        "body": "Status colors appear only where they communicate a decision, validation result, or changed geometry. They are never decorative accents.",
+        "section": "colors"
+      },
+      {
+        "name": "The Two Registers Rule",
+        "body": "Human explanation uses the interface face; machine-verifiable evidence uses the monospaced data face.",
+        "section": "typography"
+      },
+      {
+        "name": "The Laid-Flat Rule",
+        "body": "Persistent surfaces share one plane. Elevation is reserved for temporary review actions and map instruments.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do make the map and changed geometry the center of every case.",
+      "Do expose an immediately readable attribute table when a vector is selected.",
+      "Do use preset relates to move between records without requiring a search or a dense relationship diagram.",
+      "Do pair every status color with text or a symbol.",
+      "Do keep the approval boundary explicit about its target environment."
+    ],
+    "donts": [
+      "Don't fill the initial map view with narrative, validations, evidence lists, or persistent table panels.",
+      "Don't use soft lifestyle illustration, ornamental gradients, or decorative GIS motifs.",
+      "Don't imply that a sandbox approval changed production MAD.",
+      "Don't make a user infer a relationship from the map when a direct record link can show it.",
+      "Don't use the data face as a general visual costume."
+    ]
+  }
+}

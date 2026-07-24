@@ -1,0 +1,285 @@
+import { useEffect, useState } from 'react'
+import L from 'leaflet'
+import {
+  CircleMarker,
+  MapContainer,
+  Polygon,
+  Polyline,
+  TileLayer,
+  Tooltip,
+  useMap,
+} from 'react-leaflet'
+import { Image, Layers3, Map as MapIcon, Minus, Plus, Route } from 'lucide-react'
+
+function MapSync({ caseItem }) {
+  const map = useMap()
+
+  useEffect(() => {
+    const bounds = L.latLngBounds([
+      ...caseItem.geometry.parcel,
+      caseItem.geometry.current,
+      caseItem.geometry.proposed,
+      ...caseItem.geometry.nearby.map((point) => point.position),
+    ].filter(Boolean))
+    map.fitBounds(bounds, { padding: [56, 56], maxZoom: caseItem.zoom })
+  }, [caseItem, map])
+
+  return null
+}
+
+function MapZoomControls() {
+  const map = useMap()
+  return (
+    <div className="map-zoom-controls" aria-label="Map zoom controls">
+      <button type="button" onClick={() => map.zoomIn()} aria-label="Zoom in" title="Zoom in">
+        <Plus size={19} />
+      </button>
+      <button type="button" onClick={() => map.zoomOut()} aria-label="Zoom out" title="Zoom out">
+        <Minus size={19} />
+      </button>
+    </div>
+  )
+}
+
+function LayerPicker({ visibleLayers, setVisibleLayers, baseMap, setBaseMap }) {
+  const [open, setOpen] = useState(false)
+  const toggle = (layer) => {
+    setVisibleLayers((current) =>
+      current.includes(layer) ? current.filter((item) => item !== layer) : [...current, layer],
+    )
+  }
+
+  return (
+    <div className="map-layer-picker">
+      <button
+        type="button"
+        className={open ? 'map-tool active' : 'map-tool'}
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        aria-controls="map-layers-menu"
+      >
+        <Layers3 size={18} />
+        Layers
+      </button>
+      {open && (
+        <div className="layer-popover" id="map-layers-menu">
+          <span className="layer-popover-heading">Basemap</span>
+          <div className="basemap-buttons" role="group" aria-label="Basemap">
+            <button
+              type="button"
+              className={baseMap === 'streets' ? 'active' : ''}
+              onClick={() => setBaseMap('streets')}
+              aria-pressed={baseMap === 'streets'}
+            >
+              <MapIcon size={15} /> Streets
+            </button>
+            <button
+              type="button"
+              className={baseMap === 'imagery' ? 'active' : ''}
+              onClick={() => setBaseMap('imagery')}
+              aria-pressed={baseMap === 'imagery'}
+            >
+              <Image size={15} /> Imagery
+            </button>
+          </div>
+          <span className="layer-popover-heading">Vectors</span>
+          {[
+            ['addresses', 'Address points'],
+            ['structures', 'Structures'],
+            ['parcels', 'Parcels'],
+            ['roads', 'Roads'],
+          ].map(([key, label]) => (
+            <label key={key} className="layer-option">
+              <input
+                type="checkbox"
+                checked={visibleLayers.includes(key)}
+                onChange={() => toggle(key)}
+              />
+              <span>{label}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function featureStyle(selected, defaults) {
+  return selected
+    ? { ...defaults, color: '#0a5d90', weight: Math.max(defaults.weight ?? 2, 4), fillOpacity: 0.2 }
+    : defaults
+}
+
+export default function MapWorkspace({
+  caseItem,
+  selectedFeatureKey,
+  onSelectFeature,
+  visibleLayers,
+  setVisibleLayers,
+  baseMap,
+  setBaseMap,
+}) {
+  const selectedTarget = selectedFeatureKey?.startsWith('nearby:')
+    ? selectedFeatureKey
+    : selectedFeatureKey === 'master-address' || selectedFeatureKey === 'address-variant'
+      ? 'address-point'
+      : selectedFeatureKey === 'structure-lookup'
+        ? 'structure'
+        : selectedFeatureKey
+
+  const addressSelected = selectedTarget === 'address-point'
+  const proposedPoint = caseItem.geometry.proposed
+
+  return (
+    <section className="map-workspace" aria-label={`Vector map for ${caseItem.address}`}>
+      <MapContainer
+        center={caseItem.center}
+        zoom={caseItem.zoom}
+        zoomControl={false}
+        className="map-canvas"
+        preferCanvas
+      >
+        {baseMap === 'streets' ? (
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+        ) : (
+          <TileLayer
+            attribution="Tiles &copy; Esri"
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+          />
+        )}
+
+        <MapSync caseItem={caseItem} />
+        <MapZoomControls />
+
+        {visibleLayers.includes('parcels') && (
+          <Polygon
+            positions={caseItem.geometry.parcel}
+            pathOptions={featureStyle(selectedTarget === 'parcel', {
+              color: '#497a92',
+              weight: 2,
+              dashArray: '7 5',
+              fillColor: '#7ab1cf',
+              fillOpacity: 0.08,
+            })}
+            eventHandlers={{ click: () => onSelectFeature('parcel') }}
+          >
+            <Tooltip sticky>Parcel · click for attributes</Tooltip>
+          </Polygon>
+        )}
+
+        {visibleLayers.includes('structures') && (
+          <Polygon
+            positions={caseItem.geometry.structure}
+            pathOptions={featureStyle(selectedTarget === 'structure', {
+              color: '#324b59',
+              weight: 2,
+              fillColor: '#6f8792',
+              fillOpacity: baseMap === 'imagery' ? 0.28 : 0.18,
+            })}
+            eventHandlers={{ click: () => onSelectFeature('structure') }}
+          >
+            <Tooltip sticky>{caseItem.records.structure.id} · click for attributes</Tooltip>
+          </Polygon>
+        )}
+
+        {visibleLayers.includes('roads') && (
+          <Polyline
+            positions={caseItem.geometry.road}
+            pathOptions={featureStyle(selectedTarget === 'road', {
+              color: '#707b80',
+              weight: 5,
+              opacity: 0.75,
+            })}
+            eventHandlers={{ click: () => onSelectFeature('road') }}
+          >
+            <Tooltip sticky>Road segment · click for attributes</Tooltip>
+          </Polyline>
+        )}
+
+        {visibleLayers.includes('addresses') &&
+          caseItem.geometry.nearby.map((point) => (
+            <CircleMarker
+              key={point.id}
+              center={point.position}
+              radius={selectedTarget === `nearby:${point.id}` ? 9 : 6}
+              pathOptions={{
+                color: selectedTarget === `nearby:${point.id}` ? '#0a5d90' : '#174d6d',
+                weight: selectedTarget === `nearby:${point.id}` ? 4 : 2,
+                fillColor: '#f8fbfa',
+                fillOpacity: 1,
+              }}
+              eventHandlers={{ click: () => onSelectFeature(`nearby:${point.id}`) }}
+            >
+              <Tooltip direction="top" offset={[0, -6]}>
+                {point.address} · click for attributes
+              </Tooltip>
+            </CircleMarker>
+          ))}
+
+        {caseItem.geometry.current && visibleLayers.includes('addresses') && (
+          <CircleMarker
+            center={caseItem.geometry.current}
+            radius={addressSelected ? 11 : 8}
+            pathOptions={{
+              color: '#b63d31',
+              weight: addressSelected ? 4 : 3,
+              fillColor: '#fff',
+              fillOpacity: 1,
+            }}
+            eventHandlers={{ click: () => onSelectFeature('address-point') }}
+          >
+            <Tooltip direction="left" offset={[-11, 0]}>
+              Current address point · click for attributes
+            </Tooltip>
+          </CircleMarker>
+        )}
+
+        {proposedPoint && visibleLayers.includes('addresses') && (
+          <CircleMarker
+            center={proposedPoint}
+            radius={addressSelected ? 10 : 7}
+            pathOptions={{
+              color: '#287044',
+              weight: addressSelected ? 4 : 3,
+              fillColor: '#e4f0e7',
+              fillOpacity: 1,
+            }}
+            eventHandlers={{ click: () => onSelectFeature('address-point') }}
+          >
+            <Tooltip direction="right" offset={[11, 0]}>
+              Proposed address point · click for attributes
+            </Tooltip>
+          </CircleMarker>
+        )}
+
+        {caseItem.geometry.current && proposedPoint && visibleLayers.includes('addresses') && (
+          <Polyline
+            positions={[caseItem.geometry.current, proposedPoint]}
+            pathOptions={{ color: '#287044', weight: 2, dashArray: '4 7', opacity: 0.8 }}
+          />
+        )}
+      </MapContainer>
+
+      <div className="map-case-label">
+        <span className="map-case-id">{caseItem.id}</span>
+        <strong>{caseItem.address}</strong>
+        <span>{caseItem.municipality}</span>
+      </div>
+      <LayerPicker
+        visibleLayers={visibleLayers}
+        setVisibleLayers={setVisibleLayers}
+        baseMap={baseMap}
+        setBaseMap={setBaseMap}
+      />
+      <div className="map-legend" aria-label="Map legend">
+        <span><i className="legend-dot current" /> Current</span>
+        <span><i className="legend-dot proposed" /> Proposed</span>
+        <span><i className="legend-dot other" /> Other point</span>
+        <span><Route size={14} /> Road</span>
+      </div>
+    </section>
+  )
+}

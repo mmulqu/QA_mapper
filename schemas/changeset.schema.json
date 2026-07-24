@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass.gov/massgis/mad-qa/schemas/changeset-0.1.0.json",
+  "title": "MAD QA controlled changeset",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "case_id",
+    "environment",
+    "generated_at",
+    "source_snapshot",
+    "operations"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.1.0"
+    },
+    "case_id": {
+      "type": "string",
+      "pattern": "^MAD-[0-9]{4}-[0-9]+$"
+    },
+    "environment": {
+      "enum": ["training", "test", "production"]
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reviewer": {
+      "type": ["string", "null"]
+    },
+    "reviewer_note": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "source_snapshot": {
+      "type": "object",
+      "required": ["source", "version", "rowHash", "exportedAt", "wkid"],
+      "properties": {
+        "source": { "type": "string" },
+        "version": { "type": "string" },
+        "rowHash": { "type": "string" },
+        "exportedAt": { "type": "string", "format": "date-time" },
+        "wkid": { "type": "integer" }
+      }
+    },
+    "operations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operation", "target", "preconditions"],
+        "properties": {
+          "operation": {
+            "enum": [
+              "create_address_point",
+              "move_address_point",
+              "link_address_to_point",
+              "link_point_to_structure"
+            ]
+          },
+          "target": {
+            "type": "string"
+          },
+          "proposed_geometry": {
+            "type": "object",
+            "required": ["type", "coordinates", "wkid"],
+            "properties": {
+              "type": { "const": "Point" },
+              "coordinates": {
+                "type": "array",
+                "prefixItems": [{ "type": "number" }, { "type": "number" }],
+                "items": false
+              },
+              "wkid": { "type": "integer" }
+            }
+          },
+          "preconditions": {
+            "type": "object",
+            "required": ["source_row_hash", "source_version"],
+            "properties": {
+              "source_row_hash": { "type": "string" },
+              "source_version": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
