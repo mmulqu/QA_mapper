@@ -1,0 +1,11 @@
+# View identifies any records in the ESN/COMM lookup table where the ESN/MSAG community combination isn't 
+# represented in MAD_EMERGENCY_SERVICE_ZONES.
+# 2/6/17 - DM
+
+
+CREATE OR REPLACE VIEW MADV_QA_ESZ_LUT_NOT_ESZ AS
+SELECT DISTINCT ESN || ' '|| COMM AS ESN_NOT_IN_ESZ
+FROM ESN_COMM_LUT
+MINUS
+SELECT ESN || ' '|| MSAG_COMM
+FROM MAD_EMERGENCY_SERVICE_ZONES;

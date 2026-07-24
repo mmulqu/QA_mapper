@@ -1,0 +1,19 @@
+# A view that identifies any active address records in MAD_MASTER_ADDRESS that have a SITE_ID
+# value different than the SITE_ID value(s) found in associated address points.
+# May represent a situation where the site polygon needs to be expanded to incorporate address
+# points missing a needed SITE_ID, or the site ID assigned to the associated address points needs
+# to be populated in the identified address records, or the site ID may have been erroneously assigned 
+# to the address records and should be deleted.
+# DM - 10/20/16
+
+CREATE OR REPLACE VIEW MAD.MADV_QA_MA_SITE_XPAND 
+AS SELECT * FROM MAD_MASTER_ADDRESS MA
+WHERE EXISTS
+    (SELECT * FROM MAD_ADDRESS_POINTM AP
+    WHERE MA.ADDRESS_POINT_ID = AP.ADDRESS_POINT_ID
+    AND ((MA.SITE_ID IS NULL AND AP.SITE_ID IS NOT NULL)
+          OR (MA.SITE_ID IS NOT NULL AND AP.SITE_ID IS NULL)
+          OR MA.SITE_ID <> AP.SITE_ID)
+    AND (MA.ADDRESS_STATUS NOT IN ('NOT_FOUND', 'DELETED', 'INACTIVE')
+    OR MA.ADDRESS_STATUS IS NULL));
+

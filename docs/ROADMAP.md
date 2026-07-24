@@ -12,7 +12,11 @@ This is the running implementation record for the workbench. Check off a gate on
 - [x] Local append-only proposal registry: unique proposal IDs, parent/descendant lineage, category, summary, reviewer feedback, status events, and LM Studio model IDs in `.runtime/proposal-history.csv`.
 - [x] On-demand agent change sheet: every existing source value is red, every draft value is green, and new address records are green-only.
 - [x] Localhost-only LM Studio agent bridge with case-scoped read tools, controlled fixture-draft staging, validation, and a map-side agent panel.
+- [x] On-demand MAD QA AP, MAD schema, and public MassGIS GeoServer skills; the bridge exposes only bounded, read-only schema and GeoServer evidence tools.
 - [x] Public MassGIS basemap and 2025 natural-color imagery tile services in Leaflet.
+- [x] Parse the supplied daily QA report into data-category buckets and show only non-zero checks.
+- [x] Run a selected QA category through the local agent, resolve its issue town through MAD community/town identifiers, and load that town's read-only vector extract.
+- [x] Reproduce the Rockport `MADV_QA_ASL_DUPES` issue at 8 Alpaca Court and stage its controlled review-only duplicate-row proposal.
 - [ ] Replace the synthetic case source with a server-backed case API.
 
 ## Gate 1 — test-data sandbox
@@ -29,6 +33,9 @@ This is the running implementation record for the workbench. Check off a gate on
 
 ### Current Gate 1 progress
 
+- [x] Load the supplied Rockport MAD shapefile/DBF extract into a read-only local adapter with address points, centroids, structures, parcels, streets, communities, and related MAD tables.
+- [x] Expose full Rockport vectors in Leaflet and bounded attribute/preset-relate requests through the localhost bridge.
+- [ ] Replace the Rockport shapefile/DBF export with an ID-preserving format; the current lookup table omits `OBJECTID`, so duplicate-row approval is intentionally blocked.
 - [x] Downloaded the public Brookline Basic Address Points and Advanced Address List exports on 2026-07-24.
 - [x] Built a local 400-point map fixture near a known stacked-point location, preserving original attributes and joining every selected row to the Advanced Address List on `ADDRESS_ID`.
 - [x] Exposed the fixture in the app as a **read-only** public snapshot with full point and advanced-address attribute tables.
@@ -57,6 +64,13 @@ The public point export is valuable for browser/display and metadata testing, bu
 - [ ] Poll or ingest incrementally through a server-side connector; record the source-run watermark and deduplicate repeat results.
 - [ ] Translate each eligible SQL row into a case request; retain a link back to the QA result and rule version.
 - [ ] Implement assignment, defer, and close dispositions in the Case API—not the source QA table unless that workflow is explicitly approved.
+
+### Current Gate 3 progress
+
+- [x] Parse `data/MAD_QA_20260724.txt` into 10 non-zero data buckets and 75 selectable QA checks.
+- [x] Add the production-facing endpoint shape for category investigation and town-extract loading.
+- [x] Implement one local record-level view adapter for `MADV_QA_ASL_DUPES`.
+- [ ] Replace the report-file parser and single-view local adapter with the approved QA SQL view connection.
 
 **Acceptance test:** A new QA SQL result appears as one deduplicated case, opens with its affected features and evidence, and retains its original QA-result link.
 

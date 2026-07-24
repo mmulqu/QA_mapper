@@ -1,0 +1,10 @@
+# View identifies any records in MAD_MASTER_STREET_NAME that have a NULL value in 
+# STR_NAME_BASE.  There should never be any null values in this field.
+# DM - 10/3/16
+
+CREATE OR REPLACE VIEW MADV_QA_MSN_STRTNM AS
+SELECT * FROM MAD_MASTER_STREET_NAME 
+WHERE (STR_NAME_BASE IS NULL
+	     OR REGEXP_LIKE(STR_NAME_BASE, '^ +$'))
+AND STREET_NAME IS NOT NULL
+AND street_name_id NOT IN (-1); -- FDC LITE PLACEHOLDER

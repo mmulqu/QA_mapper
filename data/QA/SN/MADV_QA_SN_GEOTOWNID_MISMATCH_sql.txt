@@ -1,0 +1,14 @@
+# This view identifies any address records in MAD_SITE_NAMES that have a GEOGRAPHIC_TOWN_ID
+# that is different than the GEOGRAPHIC_TOWN_ID found in an associated site polygon in
+# MAD_SITE_POLYM. The GEOGRAPHIC_TOWN_ID must be edited in either the identified site name record 
+# or the associated site polygon, with the site polygon's geographic location relative to the town
+# boundary layer as the definitive guide.  It may also be necessary to review the GEOGRAPHIC_TOWN_ID
+# of any master address records associated with the SITE_NAME_ID and/or SITE_ID.  It is also prudent
+# before changing the town ID of a site name record to see if any other record exists with the same
+# name and the correct town ID so as not to create an unintentional duplicate.
+# 1/24/17 - DM
+
+CREATE OR REPLACE VIEW MADV_QA_SN_GEOTOWNID_MISMATCH AS 
+SELECT SN.SITE_NAME_ID, SN.SITE_NAME, SN.SITE_ID, SN.GEOGRAPHIC_TOWN_ID SN_GEOTOWNID, SP.GEOGRAPHIC_TOWN_ID SP_GEOTOWNID FROM MAD_SITE_NAMES SN, MAD_SITE_POLYM SP
+WHERE SP.SITE_ID = SN.SITE_ID
+AND SP.GEOGRAPHIC_TOWN_ID <> SN.GEOGRAPHIC_TOWN_ID;

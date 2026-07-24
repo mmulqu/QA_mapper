@@ -1,0 +1,12 @@
+# A view that identifies any records in MAD_MASTER_ADDRESS that have been assigned a SITE_ID value that doesn't
+# match the SITE_ID in MAD_SITE_NAMES.  Either the SITE_NAME_ID or SITE_ID value associated with the address
+# record will likely need to be changed.
+# DM - 12/21/16
+
+
+CREATE OR REPLACE VIEW MADV_QA_MA_SITEID_MISMATCH AS
+SELECT MA.MASTER_ADDRESS_ID, MA.ADDRESS_POINT_ID, MA.SITE_NAME_ID, SN.SITE_NAME, MA.SITE_ID as MA_SITE_ID, SN.SITE_ID as SN_SITE_ID 
+FROM MAD_SITE_NAMES SN, MAD_MASTER_ADDRESS MA
+WHERE MA.SITE_NAME_ID = SN.SITE_NAME_ID
+AND MA.SITE_ID <> SN.SITE_ID;
+

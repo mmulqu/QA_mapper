@@ -1,0 +1,14 @@
+# View identifies any records in MAD_EMERGENCY_SERVICE_ZONES (ESZ's) that have non-unique
+# combinations of MSAG_COMM, TOWN, and ESN values.  All ESZ's should represent unique geographies.
+
+# DM - 10/11/16
+# Updated to incorporate the MINUS statement to exclude known duplicates.  4/10/17 - DM
+
+CREATE OR REPLACE VIEW MADV_QA_ESZ_DUPES AS
+SELECT MSAG_COMM, TOWN, ESN, DUPE_COUNT FROM
+    (SELECT DISTINCT MSAG_COMM, TOWN, ESN, COUNT(*) OVER (PARTITION BY MSAG_COMM, TOWN, ESN ORDER BY MSAG_COMM, TOWN, ESN) AS DUPE_COUNT
+     FROM MAD_EMERGENCY_SERVICE_ZONES)
+WHERE DUPE_COUNT > 1
+MINUS 
+SELECT MSAG_COMM, TOWN, ESN, DUPE_COUNT FROM ESZ_DUPES_LUT
+ORDER BY MSAG_COMM, TOWN, ESN;

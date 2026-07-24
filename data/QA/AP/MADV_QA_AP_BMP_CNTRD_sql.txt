@@ -1,0 +1,12 @@
+# A view that identifies any address points in MAD_ADDRESS_POINTM with a value of 'BMP_CENTROID' in
+# the ATTRIBUTE_EDIT_STATUS field.  These are remnants of multipoints exploded during FDC, but because
+# this final part wasn't also exploded, it still has the original multipoint's centroid and is flagged
+# as such by FDC Integration.  The centroids associated with these points will either need to be moved
+# to be coincident with the multipoint remnant, or the remnant might be exploded, rendering the centroid
+# orphaned (which might trigger a different daily QA check).
+# DM - 8/29/16
+
+CREATE OR REPLACE VIEW MADV_QA_AP_BMP_CNTRD AS
+SELECT * FROM MAD_ADDRESS_POINTM
+WHERE ATTRIBUTE_EDIT_STATUS = 'BMP_CENTROID'; 
+

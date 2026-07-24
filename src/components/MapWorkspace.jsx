@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import L from 'leaflet'
 import {
   CircleMarker,
+  GeoJSON,
   MapContainer,
   Polygon,
   Polyline,
@@ -154,6 +155,135 @@ function PublicMadMapSync({ snapshot }) {
   return null
 }
 
+function TownExtractMapSync({ extract, caseItem }) {
+  const map = useMap()
+
+  useEffect(() => {
+    if (caseItem?.center) {
+      map.setView(caseItem.center, caseItem.zoom || 18)
+      return
+    }
+    if (!extract.bounds) return
+    map.fitBounds(
+      [
+        [extract.bounds[1], extract.bounds[0]],
+        [extract.bounds[3], extract.bounds[2]],
+      ],
+      { padding: [48, 48], maxZoom: extract.zoom || 15 },
+    )
+  }, [caseItem, extract, map])
+
+  return null
+}
+
+const townLayerStyles = {
+  communities: { color: '#667a7e', weight: 2, dashArray: '7 5', fillColor: '#dce2df', fillOpacity: 0.05 },
+  parcels: { color: '#9aaaa8', weight: 1, fillColor: '#7ab1cf', fillOpacity: 0.05 },
+  structures: { color: '#354d58', weight: 1, fillColor: '#6f8792', fillOpacity: 0.18 },
+  roads: { color: '#273f4a', weight: 2.5, opacity: 0.62 },
+  addresses: { color: '#174d6d', weight: 1.5, fillColor: '#f7f8f5', fillOpacity: 0.95, radius: 4.5 },
+  centroids: { color: '#8b620e', weight: 1.2, fillColor: '#fff7dd', fillOpacity: 0.82, radius: 3.5 },
+}
+
+function TownExtractWorkspace({
+  extract,
+  caseItem,
+  selectedFeatureKey,
+  onSelectFeature,
+  visibleLayers,
+  setVisibleLayers,
+  baseMap,
+  setBaseMap,
+  changeCount,
+  onShowDiff,
+  onShowAgent,
+}) {
+  const activeBaseMap = activeMapService(baseMap)
+  const targetAddress = caseItem.records?.addressPoint?.id
+  const targetStructure = caseItem.records?.structure?.id
+  const vectorLayers = extract.layers.map((layer) => [layer.id, `${layer.label} (${layer.count.toLocaleString()})`])
+
+  const isIssueFeature = (feature) => (
+    (feature.properties.__layer === 'addresses' && feature.properties.__id === targetAddress)
+    || (feature.properties.__layer === 'structures' && feature.properties.__id === targetStructure)
+  )
+
+  const styleFor = (feature) => {
+    const baseStyle = townLayerStyles[feature.properties.__layer] || townLayerStyles.parcels
+    if (feature.properties.__recordKey === selectedFeatureKey) {
+      return { ...baseStyle, color: '#0d638f', weight: Math.max(baseStyle.weight || 1, 4), fillOpacity: 0.32 }
+    }
+    if (isIssueFeature(feature)) {
+      return { ...baseStyle, color: '#b63d31', weight: Math.max(baseStyle.weight || 1, 3), fillOpacity: 0.3 }
+    }
+    return baseStyle
+  }
+
+  return (
+    <section className="map-workspace" aria-label={`Rockport town extract for ${caseItem.address}`}>
+      <MapContainer
+        center={caseItem.center || extract.center}
+        zoom={caseItem.zoom || extract.zoom}
+        zoomControl={false}
+        className="map-canvas"
+        preferCanvas
+      >
+        <TileLayer
+          attribution={activeBaseMap.attribution}
+          maxNativeZoom={activeBaseMap.maxNativeZoom}
+          url={activeBaseMap.url}
+        />
+        <TownExtractMapSync extract={extract} caseItem={caseItem} />
+        <MapZoomControls />
+
+        {extract.layers
+          .filter((layer) => visibleLayers.includes(layer.id))
+          .map((layer) => (
+            <GeoJSON
+              key={`${layer.id}-${selectedFeatureKey || 'none'}-${baseMap}`}
+              data={layer.geojson}
+              style={styleFor}
+              pointToLayer={(feature, latlng) => {
+                const options = styleFor(feature)
+                return L.circleMarker(latlng, { ...options, radius: options.radius || 4 })
+              }}
+              onEachFeature={(feature, leafletLayer) => {
+                const properties = feature.properties
+                const label = properties.LABEL_TEXT
+                  || properties.SITE_ADDR
+                  || properties.COMMUNITY1
+                  || properties.STREET_N_1
+                  || properties.__id
+                leafletLayer.bindTooltip(`${layer.label}: ${label} · click for attributes`, { sticky: true })
+                leafletLayer.on('click', () => onSelectFeature(properties.__recordKey))
+              }}
+            />
+          ))}
+      </MapContainer>
+
+      <div className="map-case-label qa-case-label">
+        <span className="map-case-id">{caseItem.issueCode}</span>
+        <strong>{caseItem.address}</strong>
+        <span>{caseItem.municipality} · read-only town extract</span>
+      </div>
+      <LayerPicker
+        visibleLayers={visibleLayers}
+        setVisibleLayers={setVisibleLayers}
+        baseMap={baseMap}
+        setBaseMap={setBaseMap}
+        vectorLayers={vectorLayers}
+      />
+      <ChangeDiffControl changeCount={changeCount} onShowDiff={onShowDiff} />
+      <AgentControl onShowAgent={onShowAgent} />
+      <div className="map-legend town-extract-legend" aria-label="Town extract map legend">
+        <span><i className="legend-dot current" /> QA feature</span>
+        <span><i className="legend-dot other" /> Town extract</span>
+        <span>{extract.layers.reduce((sum, layer) => sum + layer.count, 0).toLocaleString()} mapped features</span>
+      </div>
+    </section>
+  )
+}
+
 function PublicMadWorkspace({
   snapshot,
   selectedFeatureKey,
@@ -240,10 +370,29 @@ export default function MapWorkspace({
   baseMap,
   setBaseMap,
   publicSnapshot,
+  townExtract,
   changeCount,
   onShowDiff,
   onShowAgent,
 }) {
+  if (townExtract) {
+    return (
+      <TownExtractWorkspace
+        extract={townExtract}
+        caseItem={caseItem}
+        selectedFeatureKey={selectedFeatureKey}
+        onSelectFeature={onSelectFeature}
+        visibleLayers={visibleLayers}
+        setVisibleLayers={setVisibleLayers}
+        baseMap={baseMap}
+        setBaseMap={setBaseMap}
+        changeCount={changeCount}
+        onShowDiff={onShowDiff}
+        onShowAgent={onShowAgent}
+      />
+    )
+  }
+
   if (publicSnapshot) {
     return (
       <PublicMadWorkspace

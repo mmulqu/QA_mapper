@@ -1,0 +1,15 @@
+# Address point centroids in MAD_ADDRESS_POINTM_CENTROID with a CENTROID_ID that
+# does not represent a corresponding address point in MAD_ADDRESS_POINTM, nor do
+# they link to any address in MAD_MASTER_ADDRESS.  These centroids have effectively
+# been orphaned and should probably be deleted unless a new address point and/or address
+# record can be associated with the location.
+# 6/24/14 - DM
+# Updated 8/26/16 - DM
+
+CREATE OR REPLACE VIEW MADV_QA_APC_NOMATCH AS
+SELECT * FROM MAD_ADDRESS_POINTM_CENTROID CNTRD
+WHERE NOT EXISTS (SELECT * FROM MAD_ADDRESS_POINTM AP
+                  WHERE AP.ADDRESS_POINT_ID = CNTRD.CENTROID_ID)
+AND NOT EXISTS (SELECT * FROM MAD_MASTER_ADDRESS MA
+                WHERE MA.ADDRESS_POINT_ID = CNTRD.CENTROID_ID)
+ORDER BY GEOGRAPHIC_TOWN_ID, CENTROID_ID;

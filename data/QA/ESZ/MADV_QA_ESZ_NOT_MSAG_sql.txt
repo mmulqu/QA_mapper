@@ -1,0 +1,28 @@
+# View identifies any records in MAD_EMERGENCY_SERVICE_ZONES where the ESN/MSAG community
+# combination isn't represented in the most recent MSAG deliverable table.
+# Note:  This QA check requires that the view be generated on-the-fly in the python script to account
+# for the fact that the MSAG table is updated and replaced on a periodic basis, and the replacement
+# incorporates the date of the vintage in its table name. (therefore not a static source name)
+# DM - 10/11/16
+# 2/3/17 - This QA check was inactivated.
+
+esz_not_msag_qry = '''CREATE OR REPLACE VIEW %s AS
+                                  SELECT ESN || ' '|| MSAG_COMM AS ESN_COMM_NOT_IN_MSAG
+                                  FROM MAD_EMERGENCY_SERVICE_ZONES
+                                  WHERE ESN < 1000
+                                  MINUS
+                                  SELECT DISTINCT SUBSTR(M.ESN, 3, 3) || ' '||  MC.COMMUNITY_NAME AS COMMUNITY 
+                                  FROM %s M, MAD_MSAG_COMMUNITY_POLYM MC
+                                  WHERE M.COMMUNITY_ID = MC.COMMUNITY_ID''' % (esz_not_msag_v, msag_max_tbl)
+
+
+(native SQL not embedded in Python...)
+
+CREATE OR REPLACE VIEW MADV_QA_ESZ_NOT_MSAG AS
+SELECT ESN || ' '|| MSAG_COMM AS ESN_COMM_NOT_IN_MSAG
+FROM MAD_EMERGENCY_SERVICE_ZONES
+WHERE ESN < 1000
+MINUS
+SELECT DISTINCT SUBSTR(M.ESN, 3, 3) || ' '||  MC.COMMUNITY_NAME AS COMMUNITY 
+FROM SETB.MSAG_20160623 M, MAD_MSAG_COMMUNITY_POLYM MC
+WHERE M.COMMUNITY_ID = MC.COMMUNITY_ID;

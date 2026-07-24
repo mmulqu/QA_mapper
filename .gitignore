@@ -7,3 +7,5 @@ coverage/
 .data/
 .runtime/
 public/test-data/*.json
+__pycache__/
+*.pyc

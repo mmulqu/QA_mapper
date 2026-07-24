@@ -1,0 +1,11 @@
+# View identifies any records in MAD_MASTER_ADDRESS that have an ADDRESS_STATUS of 'UNASSIGNED',
+# but have a non-NULL ADDRESS_POINT_ID.
+# If the ADDRESS_POINT_ID looks like it legitimately represents a single existing address point,
+# the ADDRESS_STATUS should be changed to be 'ACTIVE'.  If the ADDRESS_POINT_ID is a 'MULTI%' value,
+# the ADDRESS_STATUS should be changed to be 'ACTIVE_MULTI'.
+# DM - 3/24/25
+
+CREATE OR REPLACE VIEW MADV_QA_MA_UNASSIGNED_WITH_APID AS
+SELECT * FROM MAD_MASTER_ADDRESS MA
+WHERE ADDRESS_STATUS = 'UNASSIGNED'
+AND ADDRESS_POINT_ID IS NOT NULL;

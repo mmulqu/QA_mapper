@@ -1,0 +1,17 @@
+# A view that identifies any active address records in MAD_MASTER_ADDRESS that have a non-null ADDRESS_POINT_ID,
+# but that ID only represents a point in MAD_ADDRESS_POINTM_CENTROID... there is no point in MAD_ADDRESS_POINTM
+# with that ID.  The centroids are likely remnants of multipoints that have been completely exploded on sites, 
+# but there are still addresses associated with that site that couldn't be linked to a single specific structure.
+# The solution in most cases will be to convert these centroids into multipoint geometry, assign and populate a subset
+# of fields from MAD_ADDRESS_POINTM (including setting POINT_TYPE to be 'BMPC'), and append them into the address points.
+# DM - 8/29/16
+
+CREATE OR REPLACE VIEW MADV_QA_MA_NEW_BMPC AS
+SELECT * FROM MAD_MASTER_ADDRESS MA
+WHERE NOT EXISTS (SELECT * FROM MAD_ADDRESS_POINTM AP
+                  WHERE MA.ADDRESS_POINT_ID = AP.ADDRESS_POINT_ID)
+AND EXISTS (SELECT * FROM MAD_ADDRESS_POINTM_CENTROID CNTRD
+            WHERE MA.ADDRESS_POINT_ID = CNTRD.CENTROID_ID)
+AND (ADDRESS_STATUS NOT IN ('NOT_FOUND', 'DELETED', 'INACTIVE') OR ADDRESS_STATUS IS NULL)
+ORDER BY GEOGRAPHIC_TOWN_ID, ADDRESS_POINT_ID;
+

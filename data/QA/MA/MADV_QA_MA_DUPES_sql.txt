@@ -1,0 +1,49 @@
+# View shows all the records in MAD_MASTER_ADDRESS that exist as unintentional duplicates and need to be merged into
+# single records for any given address.  Every address in the master address table is supposed to be unique.
+# DM - 6/3/14
+# Updated 2/16/18 to include SUBSITE.  -DM
+# Updated 4/1/19 to include SITE_NAME_ID (as a fix for Route 24 service areas in Bridgewater) -DM
+# Updated 6/20/19 to include WING, ROOM, NON_BUILDING_STRUCTURE_NAME - DM
+# Updated 11/5/20 with re-write that uses PARTITION instead.  Speeds up performance significantly. -DM
+
+create or replace view madv_qa_ma_dupes as
+select *
+from
+  (
+  select master_address_id, address_point_id, full_number_standardized, street_name_id, community_id, 
+  geographic_town_id, address_town_id, rel_loc, non_building_structure_name, building_name, wing,
+  floor, unit, room, site_name_id, subsite, other_location,
+  count(*) over 
+    (
+    partition by full_number_standardized, street_name_id, community_id, geographic_town_id, address_town_id, rel_loc, 
+    non_building_structure_name, building_name, wing, floor, unit, room, site_name_id, subsite, other_location
+    ) as addr_count
+  from mad_master_address
+  ) qry
+where qry.addr_count > 1
+order by community_id, street_name_id, full_number_standardized, building_name, unit, rel_loc, master_address_id;
+
+
+
+----------------------------------------------------------------------------------------------------------------------
+(previous code below.  Replaced on 11/5/20)
+
+create or replace view madv_qa_ma_dupes as
+select ma.master_address_id, ma.address_point_id, ma.full_number_standardized, ma.street_name_id, ma.community_id, 
+       ma.geographic_town_id, ma.address_town_id, ma.rel_loc, ma.non_building_structure_name,ma.building_name, 
+       ma.wing, ma.floor, ma.unit, ma.room, ma.site_name_id, ma.subsite, ma.other_location 
+from mad_master_address ma, (select full_number_standardized, street_name_id, community_id, geographic_town_id, 
+	                     address_town_id, rel_loc, non_building_structure_name, building_name, wing, floor, 
+	                     unit, room, site_name_id, subsite, other_location, count(master_address_id) addr_count
+	                     from mad_master_address
+	                     group by full_number_standardized, street_name_id, community_id, geographic_town_id, 
+                             address_town_id, rel_loc, non_building_structure_name, building_name, wing, floor, unit, 
+                             room, site_name_id, subsite, other_location
+	                     order by addr_count desc, community_id, street_name_id, full_number_standardized) qry
+where qry.addr_count > 1
+and ma.full_number_standardized||ma.street_name_id||ma.community_id||ma.geographic_town_id||ma.address_town_id||ma.rel_loc||ma.non_building_structure_name||ma.building_name||ma.wing||ma.floor||ma.unit||ma.room||ma.site_name_id||ma.subsite||ma.other_location =
+qry.full_number_standardized||qry.street_name_id||qry.community_id||qry.geographic_town_id||qry.address_town_id||qry.rel_loc||qry.non_building_structure_name||qry.building_name||qry.wing||qry.floor||qry.unit||qry.room||qry.site_name_id||qry.subsite||qry.other_location
+and ma.street_name_id is not null
+and qry.street_name_id is not null
+and (ma.address_point_id not like 'MULTI%' or ma.address_point_id is null)
+order by community_id, street_name_id, full_number_standardized, building_name, unit, rel_loc, master_address_id;

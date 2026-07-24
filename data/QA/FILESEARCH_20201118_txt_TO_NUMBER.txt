@@ -1,0 +1,26 @@
+Searching for files in 'E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA' of type '.txt' ... (starting at 04:08:43 PM)
+
+Found 142 files of type '.txt' for review.  Searching contents now...
+Files in 'E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA' of type .txt containing string 'TO_NUMBER':
+
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\FILESEARCH_20201118_txt_TO_NUMBER.txt 
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\AP\MADV_QA_AP_EDIT_DATE_sql.txt  (ok)
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\AV\MADV_QA_AV_DATE_CREATED.txt  (ok)
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BRV\MADV_QA_BRV_COMMDIFF_NOT_D_sql.txt (fixed)
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BRV\MADV_QA_BRV_COMMDIFF_NOT_N_sql.txt (fixed)
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BRV\MADV_QA_BRV_MAX_E_ESL_sql.txt (inactive)
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BRV\MADV_QA_BRV_MAX_E_MA_sql.txt  (fixed)
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BRV\MADV_QA_BRV_MAX_O_ESL_sql.txt (inactive)
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BRV\MADV_QA_BRV_MAX_O_MA_sql.txt (fixed)
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BRV\MADV_QA_BRV_OVRLAP_ARC_sql.txt (fixed)
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BRV\MADV_QA_BRV_OVRLAP_LL_sql.txt (fixed)
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BRV\MADV_QA_BRV_OVRLAP_LR_sql.txt (fixed)
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BRV\MADV_QA_BRV_OVRLAP_RR_sql.txt (fixed)
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BRV\MADV_QA_BRV_PARITY_EOM_sql.txt (fixed)
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BSA\MADV_QA_BSA_EDITDATE_sql.txt (ok)
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BSA\MADV_QA_BSA_SGMNT_DATE_sql.txt (ok)
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\MA\MADV_QA_MA_DATE_CREATED_sql.txt (ok)
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\MA\MADV_QA_MA_EDIT_DATE_sql.txt  (ok)
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\SNV\MADV_QA_SNV_EDITDATE_sql.txt  (ok)
+
+19 total files found that meet specified criteria. (search ended at 04:08:43 PM)

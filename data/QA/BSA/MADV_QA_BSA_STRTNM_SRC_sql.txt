@@ -1,0 +1,9 @@
+# View identifies any segments in MAD_BASE_STREET_ARC that have a STREET_NAME_SOURCE
+# value that is anything other than a single space character.
+# DM - 9/26/16
+# This QA check was retired with the deletion of the STREET_NAME_SOURCE field.  10/6/17 - DM
+
+CREATE OR REPLACE VIEW MADV_QA_BSA_STRTNM_SRC AS 
+SELECT * FROM MAD_BASE_STREET_ARC
+WHERE STREET_NAME_SOURCE != ' '
+OR STREET_NAME_SOURCE IS NULL;

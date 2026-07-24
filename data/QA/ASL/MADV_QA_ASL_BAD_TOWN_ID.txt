@@ -1,0 +1,13 @@
+# A view that identifies any records in MAD_ADDPT_STRUCT_LUT where the STRUCTURE_TOWN_ID is
+# different from the GEOGRAPHIC_TOWN_ID of the associated address point.  The likely fix
+# will be to change the STRUCTURE_TOWN_ID to match the point's GEOGRAPHIC_TOWN_ID after
+# confirming the point has the right town ID first.
+# DM - 8/10/17
+
+CREATE OR REPLACE VIEW MADV_QA_ASL_BAD_TOWN_ID AS
+SELECT * FROM MAD_ADDPT_STRUCT_LUT LUT
+WHERE EXISTS (SELECT * FROM MAD_ADDRESS_POINTM AP
+  WHERE LUT.ADDRESS_POINT_ID = AP.ADDRESS_POINT_ID
+  AND LUT.STRUCTURE_TOWN_ID <> AP.GEOGRAPHIC_TOWN_ID)
+ORDER BY STRUCTURE_TOWN_ID, ADDRESS_POINT_ID;
+

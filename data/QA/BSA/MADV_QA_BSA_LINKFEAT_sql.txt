@@ -1,0 +1,10 @@
+# View identifies any segments in MAD_BASE_STREET_ARC that have a NULL or otherwise
+# inappropriate value in the LINK_FEAT_ID field.
+# DM - 9/26/16
+
+CREATE OR REPLACE VIEW MADV_QA_BSA_LINKFEAT AS 
+SELECT * FROM MAD_BASE_STREET_ARC
+WHERE LINK_FEAT_ID IS NULL
+OR LINK_FEAT_ID = ' '
+OR LINK_FEAT_ID = '0'
+OR LINK_FEAT_ID LIKE '<%';

@@ -1,0 +1,8 @@
+# View identifies any segments in MAD_BASE_STREET_ARC that have null geometry.  (length = 0)
+# Every street segment in BASE streets must have geometry.
+# DM - 9/26/16
+
+CREATE OR REPLACE VIEW MADV_QA_BSA_NULL_GEOM AS 
+SELECT * FROM MAD_BASE_STREET_ARC
+WHERE SDE.ST_LENGTH(SHAPE) = 0
+OR SDE.ST_LENGTH(SHAPE) IS NULL;

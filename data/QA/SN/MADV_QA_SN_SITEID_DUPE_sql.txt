@@ -1,0 +1,17 @@
+# View shows all the records in MAD_SITE_NAMES where a SITE_ID value is non-unique (is assigned
+# to more than one site name record.  A given site polygon (represented by SITE_ID) should only
+# have a single unique site name associated with it to avoid ambiguity.  If any records are found
+# by this check, the reviewer should determine which site name is incorrect and replace its 
+# SITE_NAME_ID in MAD_MASTER_ADDRESS and MAD_ADDRESS_VARIANTS with the correct SITE_NAME_ID before 
+# deleting the incorrect site name record from MAD_SITE_NAMES.
+# DM - 3/22/21
+
+create or replace view MADV_QA_SN_SITEID_DUPE as
+select * from mad_site_names
+where site_id in (
+select site_id from (
+select site_id, geographic_town_id, count(site_id) CNT from mad_site_names
+where site_id is not null
+group by site_id, geographic_town_id)
+where CNT > 1)
+order by geographic_town_id, site_name;

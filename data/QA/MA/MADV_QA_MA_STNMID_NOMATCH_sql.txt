@@ -1,0 +1,13 @@
+# Shows all records in MAD_MASTER_ADDRESS with a non-null STREET_NAME_ID that don't have an associated
+# record in MAD_MASTER_STREET_NAME.  These are likely candidates of accidental deletions of street
+# name records from the master street name table.  Either a different pre-existing street name ID should
+# be recorded in the affected address records, or a new street name record will need to be created in
+# MAD_MASTER_STREET_NAME first and either that new ID is used, or it is changed to the ID in the address
+# records.  (and propagated throughout the MAD as necessary) 6/2/14 - DM
+
+CREATE OR REPLACE VIEW MADV_QA_MA_STNMID_NOMATCH AS
+SELECT * FROM MAD_MASTER_ADDRESS MA
+WHERE STREET_NAME_ID IS NOT NULL
+AND NOT EXISTS (SELECT * FROM MAD_MASTER_STREET_NAME SN
+                WHERE MA.STREET_NAME_ID = SN.STREET_NAME_ID)
+ORDER BY GEOGRAPHIC_TOWN_ID, STREET_NAME_ID, MASTER_ADDRESS_ID;

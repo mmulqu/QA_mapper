@@ -1,0 +1,8 @@
+# View shows any address points in MAD_ADDRESS_POINTM that have a NULL COMMUNITY_ID value.
+# Every address point should have a non-null COMMUNITY_ID value that represents the MSAG
+# community it geographically exists inside of.
+# DM - 3/25/20
+
+CREATE OR REPLACE VIEW MADV_QA_AP_NO_COMMID AS
+SELECT * FROM MAD_ADDRESS_POINTM AP
+WHERE COMMUNITY_ID IS NULL;

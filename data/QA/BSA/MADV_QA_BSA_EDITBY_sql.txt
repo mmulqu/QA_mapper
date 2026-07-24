@@ -1,0 +1,10 @@
+# View identifies any segments in MAD_BASE_STREET_ARC that have an invalid value
+# in the LAST_EDIT_BY field.  (Must be 2 or 3 character initials)
+# DM - 9/27/16
+# Updated to replace the regular expression so all BSA edit-by values are standardized for MassGIS staff.  4/10/17 - DM
+
+CREATE OR REPLACE VIEW MADV_QA_BSA_EDITBY AS
+SELECT * FROM MAD_BASE_STREET_ARC BSA
+WHERE NOT REGEXP_LIKE(LAST_EDIT_BY, '^MGIS-([A-Z]{2}|[A-Z]{3})$');
+
+#WHERE NOT REGEXP_LIKE(LAST_EDIT_BY, '^([A-Z]{2}|[A-Z]{3})$');

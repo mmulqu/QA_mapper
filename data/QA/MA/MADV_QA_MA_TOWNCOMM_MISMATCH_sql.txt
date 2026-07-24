@@ -1,0 +1,49 @@
+# This view identifies any address records in MAD_MASTER_ADDRESS that have an incorrect
+# ADDRESS_TOWN_ID OR GEOGRAPHIC_TOWN_ID or an incorrect COMMUNITY_ID value, based on the value of the others.
+# MAD_MSAG_COMMUNITY_POLYM serves as the resource where the association between MSAG
+# community IDs and town IDs is maintained.  A given COMMUNITY_ID can only be associated
+# with a single official town, except in the case of Devens (ID = 83), which has been
+# explicitly excluded from this query.  The likely fix is to confirm whether the ADDRESS_TOWN_ID or GEOGRAPHIC_TOWN_ID
+# or the COMMUNITY_ID is correct in the address, and fix the incorrect value.  
+# (COMMUNITY_ID can be validated by confirming the correct street name in the address)
+# 8/30/16 - DM
+
+# Updated 10/27/16 to include the in-state/out-of-state vs. NULL/not NULL address town ID checks.  - DM
+# Updated 1/19/22 to include "AND MA.GEOGRAPHIC_TOWN_ID <> MSAG.ADDRESS_TOWN_ID" and other references to
+# GEOGRAPHIC_TOWN_ID to reflect change in COMMUNITY_ID usage. - DM
+# Updated 4/14/26 to represent the SQL found to actively be in use... likely an oversight this file was not updated simultaneously. - DM
+
+
+CREATE OR REPLACE VIEW MADV_QA_MA_TOWNCOMM_MISMATCH AS
+SELECT MA.MASTER_ADDRESS_ID, MA.STREET_NAME_ID, MA.FULL_NUMBER_STANDARDIZED, MSN.STREET_NAME, MA.GEOGRAPHIC_TOWN_ID AS MA_GEOTOWN_ID,
+       MA.ADDRESS_TOWN_ID AS MA_ADDRTOWN_ID, MA.COMMUNITY_ID AS MA_COMM_ID, MSN_MSAG.ADDRESS_TOWN_ID AS MSN_ADDRTOWN_ID, MSN.COMMUNITY_ID AS MSN_COMM_ID
+FROM MAD_MASTER_ADDRESS MA, MAD_MASTER_STREET_NAME MSN, MAD_MSAG_COMMUNITY_POLYM MA_MSAG, MAD_MSAG_COMMUNITY_POLYM MSN_MSAG
+WHERE MA.STREET_NAME_ID = MSN.STREET_NAME_ID
+AND MA.COMMUNITY_ID = MA_MSAG.COMMUNITY_ID
+AND MSN.COMMUNITY_ID = MSN_MSAG.COMMUNITY_ID
+AND MSN.COMMUNITY_ID <> 83
+AND MA_MSAG.COMMUNITY_ID IS NOT NULL
+AND MSN_MSAG.COMMUNITY_ID IS NOT NULL
+AND (MA.ADDRESS_TOWN_ID <> MSN_MSAG.ADDRESS_TOWN_ID
+     OR
+     (MA.COMMUNITY_ID <> MSN.COMMUNITY_ID
+     AND MA_MSAG.ADDRESS_TOWN_ID <> MA.GEOGRAPHIC_TOWN_ID)
+    )
+ORDER BY GEOGRAPHIC_TOWN_ID, STREET_NAME_ID, MA_COMM_ID, FULL_NUMBER_STANDARDIZED;
+
+
+#### PREVIOUS VERSION OF CODE BELOW
+
+--CREATE OR REPLACE VIEW MADV_QA_MA_TOWNCOMM_MISMATCH AS
+--SELECT * FROM MAD_MASTER_ADDRESS MA
+--WHERE EXISTS (SELECT * FROM MAD_MSAG_COMMUNITY_POLYM MSAG
+--              WHERE MA.COMMUNITY_ID IS NOT NULL
+--              AND MA.COMMUNITY_ID = MSAG.COMMUNITY_ID
+--              AND (MSAG.ADDRESS_TOWN_ID IS NOT NULL
+--                   AND MA.ADDRESS_TOWN_ID <> MSAG.ADDRESS_TOWN_ID 
+--                   AND MA.GEOGRAPHIC_TOWN_ID <> MSAG.ADDRESS_TOWN_ID
+--                   AND MA.COMMUNITY_ID <> 83)
+--              OR (MSAG.ADDRESS_TOWN_ID IS NULL AND MA.COMMUNITY_ID <> 83)
+--              )
+--OR (COMMUNITY_ID > 1000 AND (ADDRESS_TOWN_ID IS NOT NULL OR GEOGRAPHIC_TOWN_ID IS NULL) )
+--OR (COMMUNITY_ID < 1000 AND (ADDRESS_TOWN_ID IS NULL OR GEOGRAPHIC_TOWN_ID IS NULL) );

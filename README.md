@@ -1,15 +1,17 @@
 # MAD QA Workbench
 
-A map-first training MVP for reviewing AI-agent proposals against a safe, synthetic snapshot of the MassGIS Master Address Database workflow.
+A map-first QA workbench for reviewing AI-agent proposals against local MAD extracts before any controlled publisher handoff.
 
 The current app focuses on the geometry-and-record inspection loop without connecting to production:
 
-- select an address QA case;
+- browse the current daily QA checks by data category, with zero-count checks omitted;
+- select a QA category and let the local agent narrow it to issue records;
+- resolve the affected town through MAD community/town identifiers and load that town's extract;
 - view address-point, structure, parcel, road, and nearby-address vectors on a Leaflet map;
 - switch between the public MassGIS basemap and MassGIS 2025 natural-color imagery, and control vector visibility;
 - click a vector to open its full attribute table;
 - follow preset relations between address points, Master Address, MAD structure, structure lookup, address variants, and parcel;
-- ask a local LM Studio agent to explain one synthetic case or stage its controlled training draft;
+- ask a local LM Studio agent to explain the selected evidence or stage its controlled review draft;
 - inspect staged field changes as red/current and green/proposed values;
 - accept an eligible address-point proposal locally in the training workspace.
 
@@ -50,7 +52,7 @@ The app can connect to a model already running in LM Studio through a localhost-
 3. Neighboring address points as clickable sequence context.
 4. A no-proposal state for cases that need municipal evidence.
 
-The default QA cases are synthetic. Basemap and imagery tiles are referenced from public MassGIS services; no private MassGIS service or credential is embedded in the client. The public map-service URLs and the staged data/agent plan are in [docs/ROADMAP.md](docs/ROADMAP.md).
+The primary queue is parsed from the supplied daily QA report. Rockport currently provides the first real town-extract proof case; the older examples remain under **Training examples**. Basemap and imagery tiles are referenced from public MassGIS services, and no private credential is embedded in the client. See [docs/QA_CATEGORY_TOWN_WORKFLOW.md](docs/QA_CATEGORY_TOWN_WORKFLOW.md) for the current data contract and limitations.
 
 ## Optional public MAD test fixture
 
@@ -75,7 +77,7 @@ Case snapshots live in `src/data/cases.js`. Each case includes:
 
 ## Production integration boundary
 
-The **Accept proposal** action intentionally writes only to `localStorage`. A production implementation should replace that action with an authenticated Case API call, not direct browser access to MAD.
+The **Accept proposal** action calls the localhost bridge, which freezes a server-side publisher handoff and runs the ArcPy adapter in validate mode by default. A production implementation must retain that authenticated server boundary; the browser never receives direct MAD access.
 
 The publisher should:
 

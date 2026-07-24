@@ -1,0 +1,24 @@
+# View identifies any records in MAD_MASTER_STREET_NAME where concatenating the parsed
+# street name fields yields a value different than the one in that same record's STREET_NAME field.
+# Concatenation of parsed field names should always yield the STREET_NAME. (when not a Ramp)
+# DM - 10/3/16
+
+CREATE OR REPLACE VIEW MADV_QA_MSN_PARSED_NM AS
+SELECT OBJECTID, STREET_NAME_ID, COMMUNITY_ID, STREET_NAME, TRIM(REGEXP_REPLACE
+      (PRE_MOD || ' ' || 
+       PRE_DIR || ' ' || 
+       PRE_TYPE|| ' ' ||
+       STR_NAME_BASE || ' ' ||
+       POST_TYPE|| ' ' ||
+       POST_DIR|| ' ' ||
+       POST_MOD, ' +', ' ')) AS CONCATENATED_NAME
+FROM MAD_MASTER_STREET_NAME
+WHERE TRIM (REGEXP_REPLACE
+		  (PRE_MOD || ' ' || 
+		   PRE_DIR || ' ' || 
+		   PRE_TYPE|| ' ' ||
+		   STR_NAME_BASE || ' ' ||
+		   POST_TYPE|| ' ' ||
+		   POST_DIR|| ' ' ||
+		   POST_MOD, ' +', ' ')) <> STREET_NAME AND STR_NAME_BASE <> 'RAMP'
+ORDER BY COMMUNITY_ID, STREET_NAME;

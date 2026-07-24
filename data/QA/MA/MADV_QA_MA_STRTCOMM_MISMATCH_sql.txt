@@ -1,0 +1,54 @@
+# This view identifies any address records in MAD_MASTER_ADDRESS with a non-null STREET_NAME_ID that
+# have an incorrect COMMUNITY_ID value.  COMMUNITY_ID is supposed to represent the MSAG community 
+# associated with the street, as recorded in MAD_MASTER_STREET_NAME (assuming it is correct there).
+# The likely fix is to change the COMMUNITY_ID value in the address record, but it would be prudent
+# to check with the streets team first that the COMMUNITY_ID in the master streets table is correct.
+# Also make sure that the STREET_NAME_ID in the address record was not misassigned.
+# 8/30/16 - DM
+# Completely replaced code with updated SQL provided by Jack M. that reflects the change in COMMUNITY_ID
+# in MAD_MASTER_ADDRESS defaulting to the comm of the address town, but allows for possibility of it
+# reflecting the comm of the geographic town instead. 10/12/22 - DM
+
+CREATE OR REPLACE VIEW MADV_QA_MA_STRTCOMM_MISMATCH AS
+SELECT MA.MASTER_ADDRESS_ID, 
+       MA.STREET_NAME_ID, 
+       MA.FULL_NUMBER_STANDARDIZED, 
+       MSN.STREET_NAME, 
+       MA.GEOGRAPHIC_TOWN_ID AS MA_GEOTOWN_ID,
+       MA.ADDRESS_TOWN_ID AS MA_ADDRTOWN_ID, 
+       MA.COMMUNITY_ID AS MA_COMM_ID, 
+       MSN_MSAG.ADDRESS_TOWN_ID AS MSN_ADDRTOWN_ID, 
+       MSN.COMMUNITY_ID AS MSN_COMM_ID
+FROM MAD_MASTER_ADDRESS MA, 
+     MAD_MASTER_STREET_NAME MSN, 
+     MAD_MSAG_COMMUNITY_POLYM MA_MSAG, 
+     MAD_MSAG_COMMUNITY_POLYM MSN_MSAG
+WHERE MA.STREET_NAME_ID = MSN.STREET_NAME_ID
+AND MA.COMMUNITY_ID = MA_MSAG.COMMUNITY_ID
+AND MSN.COMMUNITY_ID = MSN_MSAG.COMMUNITY_ID
+AND MSN.COMMUNITY_ID <> 83
+AND MA_MSAG.COMMUNITY_ID IS NOT NULL
+AND MSN_MSAG.COMMUNITY_ID IS NOT NULL
+AND (MA.ADDRESS_TOWN_ID <> MSN_MSAG.ADDRESS_TOWN_ID
+     OR
+     (MA.COMMUNITY_ID <> MSN.COMMUNITY_ID
+     AND MA_MSAG.ADDRESS_TOWN_ID <> MA.GEOGRAPHIC_TOWN_ID)
+    )
+ORDER BY GEOGRAPHIC_TOWN_ID, STREET_NAME_ID, MA_COMM_ID, FULL_NUMBER_STANDARDIZED;
+
+
+#--------------------------------------------------------
+# Previous QA view code recorded below
+#---------------------------------------------------------
+CREATE OR REPLACE VIEW MADV_QA_MA_STRTCOMM_MISMATCH AS
+SELECT MA.MASTER_ADDRESS_ID, 
+       MA.FULL_NUMBER_STANDARDIZED, 
+       MA.GEOGRAPHIC_TOWN_ID, 
+       MA.STREET_NAME_ID,
+       MA.COMMUNITY_ID AS MA_COMM_ID,
+       SN.COMMUNITY_ID AS MSN_COMM_ID,
+       SN.STREET_NAME
+FROM MAD_MASTER_ADDRESS MA, MAD_MASTER_STREET_NAME SN
+WHERE MA.STREET_NAME_ID = SN.STREET_NAME_ID
+AND MA.COMMUNITY_ID <> SN.COMMUNITY_ID
+ORDER BY GEOGRAPHIC_TOWN_ID, STREET_NAME_ID, MA_COMM_ID, FULL_NUMBER_STANDARDIZED;

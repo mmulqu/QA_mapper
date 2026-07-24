@@ -1,0 +1,4 @@
+interface:
+  display_name: "MassGIS GeoServer CLI"
+  short_description: "Run MassGIS GeoServer tools as standalone JSON CLI scripts"
+  default_prompt: "Use $massgis-geoserver to search layers, inspect schema, and run ECQL geospatial queries through standalone Python scripts."

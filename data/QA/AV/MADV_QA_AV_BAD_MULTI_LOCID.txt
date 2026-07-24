@@ -1,0 +1,30 @@
+# A view that identifies any records in MAD_ADDRESS_VARIANTS that have a LOC_ID value of 'MULTIPLE'
+# but should really be assigned a single standard LOC_ID value.  This applies to any address variant
+# that derives from parcels or the Warren Group (SOURCE_TYPE = 'L3' or 'WG') or an address variant
+# from any other source that shares a MASTER_ADDRESS_ID with a parcel or Warren Group derived variant
+# that has a LOC_ID of 'MULTIPLE'.  Warren Group variants can often be traced back to the correct parcel
+# by looking at their COMMENTS value (if it hasn't been overwritten) and other kinds of sources that
+# associate with parcel/WG variants can have the correct parcel deduced (e.g. a VRIS sourced variant
+# should have the LOC_ID of the parcel with a primary residential structure on it if there is only one).
+# DM - 4/24/2024
+
+
+CREATE OR REPLACE VIEW MADV_QA_AV_BAD_MULTI_LOCID AS
+SELECT * FROM MAD_ADDRESS_VARIANTS AV
+WHERE AV.LOC_ID = 'MULTIPLE'
+AND (EXISTS (SELECT * FROM MAD_SOURCE SRC
+             WHERE AV.SOURCE_NAME_ID = SRC.SOURCE_NAME_ID
+             AND SRC.SOURCE_TYPE IN ('L3', 'WG')))
+OR (EXISTS (SELECT * FROM MAD_SOURCE SRC
+            WHERE AV.SOURCE_NAME_ID = SRC.SOURCE_NAME_ID
+            AND SRC.SOURCE_TYPE NOT IN ('L3', 'WG'))
+    AND
+    EXISTS (SELECT * FROM (SELECT MASTER_ADDRESS_ID FROM MAD_ADDRESS_VARIANTS AV2
+            WHERE AV2.LOC_ID = 'MULTIPLE'
+            AND (EXISTS (SELECT * FROM MAD_SOURCE SRC
+                         WHERE AV2.SOURCE_NAME_ID = SRC.SOURCE_NAME_ID
+                         AND SRC.SOURCE_TYPE IN ('L3', 'WG')))) QRY
+            WHERE QRY.MASTER_ADDRESS_ID = AV.MASTER_ADDRESS_ID)
+    )
+ORDER BY GEOGRAPHIC_TOWN_ID, INPUT_FULL_ADDRESS, SOURCE_NAME_ID;
+

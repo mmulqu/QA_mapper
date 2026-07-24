@@ -1,0 +1,17 @@
+# View shows any address points in MAD_ADDRESS_POINTM where the BUILDING_COUNT value violates an implicit expectation 
+# based on that feature's POINT_TYPE.  "BC" points represent single structures and should always have a building count of 1. 
+# "BMP" and "DBMP" points represent multiple structures and should always have a BUILDING_COUNT greater than 1."ABC" points
+# can represent one or more structures, so should have a BUILDING_COUNT value greater than 0. And "PC" points represent 
+# vacant parcel centroids and should only have a BUILDING_COUNT value of 0.
+# DM - 12/2/16
+
+CREATE OR REPLACE VIEW MADV_QA_AP_BLDGCNT AS
+SELECT * FROM MAD_ADDRESS_POINTM
+WHERE POINT_TYPE IN ('BC','BEP') AND (BUILDING_COUNT IS NULL OR BUILDING_COUNT <> 1)
+OR (POINT_TYPE IN ('BMP', 'DBMP') AND (BUILDING_COUNT IS NULL OR BUILDING_COUNT < 2))
+OR (POINT_TYPE IN ('PC', 'BMPC') AND (BUILDING_COUNT IS NULL OR BUILDING_COUNT <> 0))
+OR (POINT_TYPE = 'ABC' AND (
+      (BUILDING_COUNT IS NULL AND (GEOGRAPHIC_EDIT_STATUS <> 'PLANNED' OR GEOGRAPHIC_EDIT_STATUS IS NULL)) 
+      OR BUILDING_COUNT = 0)
+    )
+ORDER BY GEOGRAPHIC_TOWN_ID, ADDRESS_POINT_ID;

@@ -1,0 +1,25 @@
+# View identifies any STREET_NAME values in MAD_MASTER_STREET_NAME that are associated
+# with non-PC (parcel centroid) address point addresses, but do not appear in MAD_BASE_RANGE_VARIANTS
+# (and therefore aren't associated with street geometry).  If a street name is associated with a 
+# structure-based address point's address, there should be an identically named street segment
+# that provides access to that point, or the street name might need to be moved out of
+# MAD_MASTER_STREET_NAME and into MAD_SITE_NAMES if it's more of a feature/landmark style name.
+# DM - 10/4/16
+# Added 'M' and 'E' to the excluded REAL_STREET values.  1/19/17 - DM
+# 'P' removed from exclusions per request.  9/20/17 - DM
+
+CREATE OR REPLACE VIEW MADV_QA_MSN_AP_ONLY AS
+SELECT MA.ADDRESS_POINT_ID, MA.FULL_NUMBER_STANDARDIZED, MSN.STREET_NAME, MSN.STREET_NAME_ID, MSN.REAL_STREET, MC.COMMUNITY_NAME, MSN.COMMUNITY_ID, MSN.NOTES
+FROM MAD_MASTER_STREET_NAME MSN
+JOIN MAD_MSAG_COMMUNITY_POLYM MC ON MC.COMMUNITY_ID = MSN.COMMUNITY_ID
+JOIN MAD_MASTER_ADDRESS MA ON MA.STREET_NAME_ID = MSN.STREET_NAME_ID
+WHERE MSN.STREET_NAME_ID IN
+  	(SELECT MA.STREET_NAME_ID
+  	FROM MAD_MASTER_ADDRESS MA
+  	JOIN MAD_ADDRESS_POINTM AP ON AP.ADDRESS_POINT_ID = MA.ADDRESS_POINT_ID
+  	WHERE AP.POINT_TYPE <> 'PC' -- REMOVE THE PARCEL CENTROIDS.
+  	MINUS 
+  	SELECT STREET_NAME_ID
+  	FROM MAD_BASE_RANGE_VARIANTS)
+AND REAL_STREET NOT IN ('F', 'T', 'L', 'M', 'E') -- AND THE STREET IS NOT A FEATURE OR A TRAIL
+ORDER BY MC.COMMUNITY_NAME, MSN.STREET_NAME;

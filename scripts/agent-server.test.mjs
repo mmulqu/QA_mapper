@@ -13,18 +13,26 @@ import {
 } from './agent-server.mjs'
 
 test('keeps skill instructions out of the default skill index', () => {
-  const [skill] = getSkillIndex()
+  const skills = getSkillIndex()
+  const skill = skills.find((item) => item.id === 'qa-evidence-brief')
 
+  assert.equal(skills.length, 4)
   assert.equal(skill.id, 'qa-evidence-brief')
   assert.equal('instructions' in skill, false)
 })
 
 test('loads the full allow-listed skill only on request', () => {
-  const skill = loadSkill('qa-evidence-brief')
+  const evidenceSkill = loadSkill('qa-evidence-brief')
+  const apSkill = loadSkill('mad-qa-ap')
+  const schemaSkill = loadSkill('mad-schema-intelligence')
+  const geoServerSkill = loadSkill('massgis-geoserver')
 
-  assert.equal(skill.name, 'QA Evidence Brief')
-  assert.match(skill.instructions, /Required evidence/)
-  assert.match(skill.instructions, /stage_fixture_draft/)
+  assert.equal(evidenceSkill.name, 'QA Evidence Brief')
+  assert.match(evidenceSkill.instructions, /Required evidence/)
+  assert.match(evidenceSkill.instructions, /stage_fixture_draft/)
+  assert.match(apSkill.instructions, /POINT_TYPE/)
+  assert.match(schemaSkill.instructions, /relationship-aware/)
+  assert.match(geoServerSkill.instructions, /GeoServer/)
 })
 
 test('creates a review-only fixture draft with source preconditions', () => {
@@ -53,6 +61,21 @@ test('freezes only allow-listed operations into an approved publisher handoff', 
   assert.equal(handoff.sourceSnapshot.rowHash, cases[0].snapshot.rowHash)
   assert.deepEqual(handoff.operations.map((operation) => operation.type), ['move_address_point', 'link_point_to_structure'])
   assert.equal(handoff.productionApplied, false)
+})
+
+test('keeps a logical proposal reviewable when its source extract cannot target a safe publish', () => {
+  const reviewOnlyCase = {
+    ...cases[0],
+    publishEligible: false,
+    publishBlocker: 'The source export omitted the lookup OBJECTID.',
+  }
+  const draft = createFixtureDraft(reviewOnlyCase, 'The duplicate relationship is confirmed.')
+
+  assert.equal(draft.validation.passed, true)
+  assert.throws(
+    () => createPublisherHandoff(reviewOnlyCase, draft),
+    /omitted the lookup OBJECTID/,
+  )
 })
 
 test('stores human rejection feedback for the next local-agent turn', () => {

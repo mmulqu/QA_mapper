@@ -1,0 +1,39 @@
+# View identifies any address records in the latest ESL table with an EVEN house number where that
+# house number exists outside the range of the BASE_RANGE_VARIANT record(s) associated with that
+# street name.  It's likely the BRV record's address range will need to be extended if the ESL
+# address information is legitimate.
+# Note:  This QA check requires that the view be generated on-the-fly in the python script to account
+# for the fact that the ESL table is updated and replaced on a periodic basis, and the replacement
+# incorporates the date of the vintage in its table name. (therefore not a static source name)
+# DM - 9/26/16
+# 2/3/17 - This QA check was inactivated.
+
+'''CREATE OR REPLACE VIEW %s AS 
+WITH BRV AS ( SELECT STREET_NAME_ID, 
+      MAX
+        (
+        GREATEST
+          (
+          TO_NUMBER(TRIM(REPLACE(FROM_ADDRESS, ' ', 1))), 
+          TO_NUMBER(TRIM(REPLACE(TO_ADDRESS, ' ', 1)))
+          )
+        ) AS HIGH_NUM
+FROM (SELECT SNV.STREET_NAME_ID, BRV.FROM_ADDRESS_LEFT AS FROM_ADDRESS, BRV.TO_ADDRESS_LEFT AS TO_ADDRESS
+      FROM MAD_BASE_RANGE_VARIANTS BRV, MAD_STREET_NAME_VARIANTS SNV
+      WHERE BRV.STREET_NAME_VARIANT_ID = SNV.STREET_NAME_VARIANT_ID
+      AND BRV.PARITY_LEFT = 'E'
+      UNION
+      SELECT SNV.STREET_NAME_ID, BRV.FROM_ADDRESS_RIGHT, BRV.TO_ADDRESS_RIGHT
+      FROM MAD_BASE_RANGE_VARIANTS BRV, MAD_STREET_NAME_VARIANTS SNV
+      WHERE BRV.STREET_NAME_VARIANT_ID = SNV.STREET_NAME_VARIANT_ID
+      AND BRV.PARITY_RIGHT = 'E')
+GROUP BY STREET_NAME_ID)
+SELECT DISTINCT E.STREET_NAME_ID, E.HOUSE_NUMBER AS ESL_HOUSE_NUMBER, REGEXP_SUBSTR(E.HOUSE_NUMBER, '\d+') AS NUMBER_VAL, MSN.STREET_NAME, 
+MC.COMMUNITY_ID, MC.COMMUNITY_NAME, BRV.HIGH_NUM AS BRV_HIGH_NUM_E
+FROM %s E, MAD_MASTER_STREET_NAME MSN, MAD_MSAG_COMMUNITY_POLYM MC, BRV
+WHERE E.STREET_NAME_ID = MSN.STREET_NAME_ID 
+AND E.STREET_NAME_ID = BRV.STREET_NAME_ID
+AND MSN.COMMUNITY_ID = MC.COMMUNITY_ID
+AND MOD(REGEXP_SUBSTR(E.HOUSE_NUMBER, '\d+'), 2) = 0
+AND TO_NUMBER(BRV.HIGH_NUM) < TO_NUMBER(REGEXP_SUBSTR(E.HOUSE_NUMBER, '\d+'))
+ORDER BY MC.COMMUNITY_NAME, MSN.STREET_NAME, REGEXP_SUBSTR(E.HOUSE_NUMBER, '\d+')''' % (brv_maxnum_E_esl_v , esl_max_tbl)

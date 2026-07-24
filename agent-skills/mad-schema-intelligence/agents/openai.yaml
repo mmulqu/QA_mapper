@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAD Schema Intelligence"
+  short_description: "Explain MAD layer links and join paths clearly"
+  default_prompt: "Use $mad-schema-intelligence to map table relationships and identify correct join keys for MAD/GISDATA questions."

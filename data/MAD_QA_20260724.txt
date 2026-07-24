@@ -1,0 +1,1246 @@
+Starting daily MAD QA queries at 06:00:04 AM...
+(QA results are also recorded in the table MADSTAT_DAILY_QA_TRACKING)
+
+__________________________________
+
+(1) MASTER_ADDRESS CHECKS
+__________________________________
+
+#1-1 Duplicate address records in MAD_MASTER_ADDRESS...
+
+>>   Querying MADV_QA_MA_DUPES...
+
+     **********************************************************************************************
+     **** NUMBER OF DUPLICATED MASTER ADDRESS RECORDS: 8
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#1-2 Master address records where ADDRESS_TOWN_ID and COMMUNITY_ID are mismatched (excludes DEVENS)...
+
+>>   Querying MADV_QA_MA_TOWNCOMM_MISMATCH...
+
+     **********************************************************************************************
+     **** NUMBER OF ADDRESS RECORDS WITH MISMATCHED ADDRESS TOWN AND COMM IDS: 2108
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#1-3 Master address records with a GEOGRAPHIC_TOWN_ID different than in associated address points/centroids...
+
+>>   Querying MADV_QA_MA_GEOTOWNID_MISMATCH...
+
+     No addresses with a GEOGRAPHIC_TOWN_ID different than in associated address points/centroids were found in MAD_MASTER_ADDRESS.
+----
+
+#1-4 Master address records where COMMUNITY_ID doesn't match the associated street name's COMMUNITY_ID...
+
+>>   Querying MADV_QA_MA_STRTCOMM_MISMATCH...
+
+     **********************************************************************************************
+     **** NUMBER OF ADDRESS RECORDS WITH COMMUNITY_ID NOT MATCHING ASSOCIATED STREET COMMUNITY_ID: 931
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#1-5 Master address records with a non-null STREET_NAME_ID not found in MAD_MASTER_STREET_NAME...
+
+>>   Querying MADV_QA_MA_STNMID_NOMATCH...
+
+     No address records with a non-existent STREET_NAME_ID found in MAD_MASTER_ADDRESS.
+----
+
+#1-6 Master address records where FULL_NUMBER_STANDARDIZED was parsed incorrectly into the street number fields...
+
+>>   Querying MADV_QA_MA_NUM_PARSE...
+
+     No mis-parsed FULL_NUMBER_STANDARDIZED values were found in MAD_MASTER_ADDRESS.
+----
+
+#1-7 Master address records with ADDRESS_POINT_ID values that don't exist in address points or centroids...
+
+>>   Querying MADV_QA_MA_APID_NOT_AP...
+
+     **********************************************************************************************
+     **** NUMBER OF ADDRESS RECORDS WITH BOGUS ADDRESS POINT IDS: 770
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#1-8 Master address records that link to a centroid, but not an address point...
+
+>>   Querying MADV_QA_MA_NEW_BMPC...
+
+     No addresses linking to centroids but not address points were found in MAD_MASTER_ADDRESS.
+----
+
+#1-9 Master address records with a SITE_ID that doesn't exist in MAD_SITE_POLYM...
+
+>>   Querying MADV_QA_MA_BAD_SITEID...
+
+     No addresses with a non-existent SITE_ID were found in MAD_MASTER_ADDRESS.
+----
+
+#1-10 Master address records with a SITE_ID value that doesn't match associated address points...
+
+>>    Querying MADV_QA_MA_SITE_XPAND...
+
+      **********************************************************************************************
+      **** NUMBER OF ADDRESSES WITH A SITE_ID VALUE THAT DOESN'T MATCH ASSOCIATED ADDRESS POINTS: 3893
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#1-11 Master address records where ADDRESS_STATUS = 'ACTIVE' or 'LINKED' but ADDRESS_POINT_ID is NULL...
+
+>>    Querying MADV_QA_MA_ACTIVE_NO_PT...
+
+      **********************************************************************************************
+      **** NUMBER OF ADDRESSES WITH AN ACTIVE OR LINKED STATUS BUT NO ADDRESS POINT ID: 2
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#1-12 Master address records with invalid values in LAST_EDIT_DATE...
+
+>>    Querying MADV_QA_MA_EDIT_DATE...
+
+      **********************************************************************************************
+      **** NUMBER OF MASTER ADDRESS RECORDS WITH INVALID LAST_EDIT_DATE VALUES: 2
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#1-13 Master address records with a SITE_ID value that doesn't match the one in MAD_SITE_NAMES...
+
+>>    Querying MADV_QA_MA_SITEID_MISMATCH...
+
+      **********************************************************************************************
+      **** NUMBER OF ADDRESSES WITH A SITE_ID VALUE THAT DOESN'T MATCH MAD_SITE_NAMES: 6
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#1-14 Master address records where ADDRESS_STATUS values are not within the set of accepted domain values...
+
+>>    Querying MADV_QA_MA_DOM_ADDRSTAT...
+
+      **********************************************************************************************
+      **** NUMBER OF ADDRESSES WITH UNACCEPTABLE ADDRESS_STATUS VALUES: 1
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#1-15 Master address records where ADDRESS_POINT_ID = 'MULTIPLE', but address variants indicates it shouldn't be...
+
+>>    Querying MADV_QA_MA_NOT_MULTI_AP...
+
+      **********************************************************************************************
+      **** NUMBER OF ADDRESSES WITH QUESTIONABLE 'MULTIPLE' ADDRESS_POINT_ID VALUES: 39
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#1-16 Master address records where ADDRESS_CLASS values are not within the set of accepted domain values....
+
+>>    Querying MADV_QA_MA_DOM_ADDRCLASS...
+
+      **********************************************************************************************
+      **** NUMBER OF ADDRESSES WITH UNACCEPTABLE ADDRESS_CLASS VALUES: 1
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#1-17 Master address records where SUBADDRESS_STANDARDIZED values don't represent the individual subaddress fields....
+
+>>    Querying MADV_QA_MA_SUBADDRSTD...
+
+      **********************************************************************************************
+      **** NUMBER OF ADDRESSES WITH INCORRECT SUBADDRESS_STANDARDIZED VALUES: 1168077
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#1-18 Master address records with invalid values in DATE_CREATED...
+
+>>    Querying MADV_QA_MA_DATE_CREATED...
+
+      **********************************************************************************************
+      **** NUMBER OF MASTER ADDRESS RECORDS WITH INVALID DATE_CREATED VALUES: 1
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#1-19 Master address records where UNIT_TYPE values are not within the set of accepted domain values....
+
+>>    Querying MADV_QA_MA_DOM_UNITTYPE...
+
+      **********************************************************************************************
+      **** NUMBER OF ADDRESSES WITH UNACCEPTABLE UNIT_TYPE VALUES: 1
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#1-20 Master address records where SINGLE_SOURCE values are not within the set of accepted domain values....
+
+>>    Querying MADV_QA_MA_DOM_SINGLSRC...
+
+      No addresses with SINGLE_SOURCE values outside the accepted domain were found in MAD_MASTER_ADDRESS.
+----
+
+#1-21 Master address records where UNIT values include non-standard or unacceptable characters....
+
+>>    Querying MADV_QA_MA_UNIT_REGEXP...
+
+      **********************************************************************************************
+      **** NUMBER OF ADDRESSES WITH UNACCEPTABLE UNIT VALUES: 249
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#1-22 Master address records that don't have any associated address variant records as a source to explain their origin....
+
+>>    Querying MADV_QA_MA_NO_VARIANTS ...
+
+      **********************************************************************************************
+      **** NUMBER OF ADDRESSES WITHOUT ANY ASSOCIATED ADDRESS VARIANT SOURCES: 2951
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#1-23 Master address records where ADDRESS_STATUS = 'UNASSIGNED', but ADDRESS_POINT_ID is not NULL....
+
+>>    Querying MADV_QA_MA_UNASSIGNED_WITH_APID...
+
+      **********************************************************************************************
+      **** NUMBER OF ADDRESSES WHERE ADDRESS_STATUS IS INAPPROPRIATELY ASSIGNED A VALUE OF 'UNASSIGNED': 3
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+__________________________________
+
+(2) ADDRESS_VARIANT CHECKS
+__________________________________
+
+#2-1 Address variants records with an ADDRESS_POINT_ID value that should match the one in MAD_MASTER_ADDRESS but doesn't...
+
+>>   Querying MADV_QA_AV_APID_MISMATCH...
+
+     **********************************************************************************************
+     **** NUMBER OF ADDRESS VARIANTS WITH AN ADDRESS_POINT_ID VALUE THAT DOESN'T MATCH MAD_MASTER_ADDRESS: 420
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#2-2 Address variants records with a non-null MASTER_ADDRESS_ID value that doesn't exist in MAD_MASTER_ADDRESS...
+
+>>   Querying MADV_QA_AV_MAID_NOMATCH...
+
+     **********************************************************************************************
+     **** NUMBER OF ADDRESS VARIANTS WITH A MASTER_ADDRESS_ID VALUE THAT DOESN'T EXIST IN MAD_MASTER_ADDRESS: 438
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#2-3 Address variants records with a STREET_NAME_ID value that is different from MAD_MASTER_ADDRESS...
+
+>>   Querying MADV_QA_AV_STRTNM_MISMATCH...
+
+     **********************************************************************************************
+     **** NUMBER OF ADDRESS VARIANTS WITH A STREET_NAME_ID VALUE THAT IS DIFFERENT FROM MAD_MASTER_ADDRESS: 8489
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#2-4 Address variants records with a SITE_ID and/or SITE_NAME_ID value that is different from MAD_MASTER_ADDRESS...
+
+>>   Querying MADV_QA_AV_SITE_MISMATCH...
+
+     **********************************************************************************************
+     **** NUMBER OF ADDRESS VARIANTS WITH A SITE_ID AND/OR SITE_NAME_ID VALUE THAT IS DIFFERENT FROM MAD_MASTER_ADDRESS: 20388
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#2-5 Address variants records with a GEOGRAPHIC_TOWN_ID value that is different from MAD_MASTER_ADDRESS...
+
+>>   Querying MADV_QA_AV_TOWN_MISMATCH...
+
+     No address variants found with a GEOGRAPHIC_TOWN_ID value that is different from MAD_MASTER_ADDRESS.
+----
+
+#2-6 Address variants records with a COMMUNITY_ID value that is different from MAD_MASTER_ADDRESS...
+
+>>   Querying MADV_QA_AV_COMM_MISMATCH...
+
+     **********************************************************************************************
+     **** NUMBER OF ADDRESS VARIANTS WITH A COMMUNITY_ID VALUE THAT IS DIFFERENT FROM MAD_MASTER_ADDRESS: 374
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#2-7 Address variants records with invalid values in DATE_CREATED...
+
+>>   Querying MADV_QA_AV_DATE_CREATED...
+
+     **********************************************************************************************
+     **** NUMBER OF MDDRESS VARIANTS RECORDS WITH INVALID DATE_CREATED VALUES: 11
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#2-8 Address variants records where UNIT_TYPE values are not within the set of accepted domain values....
+
+>>   Querying MADV_QA_AV_DOM_UNITTYPE...
+
+     **********************************************************************************************
+     **** NUMBER OF VARIANTS RECORDS WITH UNACCEPTABLE UNIT_TYPE VALUES: 4
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#2-9 Address variants records where LOC_ID values of 'MULTIPLE' have been inappropriately assigned....
+
+>>   Querying MADV_QA_AV_BAD_MULTI_LOCID...
+
+     **********************************************************************************************
+     **** NUMBER OF VARIANTS RECORDS WITH UNACCEPTABLE LOC_ID VALUES OF 'MULTIPLE': 17
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+__________________________________
+
+(3) ADDRESS_POINTM CHECKS
+__________________________________
+
+#3-1 Duplicate ADDRESS_POINT_ID values in MAD_ADDRESS_POINTM...
+
+>>   Querying MADV_QA_AP_DUPES...
+
+     **********************************************************************************************
+     **** NUMBER OF DUPLICATED AP ADDRESS_POINT_ID values: 23
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#3-2 Address points in MAD_ADDRESS_POINTM with NULL geometry...
+
+>>   Querying MADV_QA_AP_NULLGEOM...
+
+     **********************************************************************************************
+     **** NUMBER OF NULL GEOMETRY ADDRESS POINTS: 3
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#3-3 Counting structure-based address points missing a lookup record in MAD_ADDPT_STRUCT_LUT...
+
+>>   Querying MADV_QA_AP_NO_STRUCT_LUT...
+
+     **********************************************************************************************
+     **** NUMBER OF ADDRESS POINTS MISSING A LOOKUP RECORD IN MAD_ADDPT_STRUCT_LUT: 25
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#3-4 Counting address points with an attribute edit status of 'BMP_CENTROID'...
+
+>>   Querying MADV_QA_AP_BMP_CNTRD...
+
+     No address points with an attribute edit status of 'BMP_CENTROID' were found in MAD_ADDRESS_POINTM.
+----
+
+#3-5 Counting address points where COMMUNITY_ID and GEOGRAPHIC_TOWN_ID are not in sync...
+#    (excludes DEVENS)
+
+>>   Querying MADV_QA_AP_TOWNCOMM_MISMATCH...
+
+     **********************************************************************************************
+     **** NUMBER OF ADDRESS POINTS WITH UNSYNC'D COMMUNITY_ID AND GEOGRAPHIC_TOWN_ID: 6
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#3-6 Counting address points where POINT_TYPE values are not within the set of accepted domain values...
+
+>>   Querying MADV_QA_AP_DOM_PTTYPE...
+
+     **********************************************************************************************
+     **** NUMBER OF ADDRESS POINTS WITH UNACCEPTABLE POINT_TYPE VALUES: 3
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#3-7 Counting address points where BUILDING_COUNT values are unacceptable relative to the POINT_TYPE...
+
+>>   Querying MADV_QA_AP_BLDGCNT...
+
+     **********************************************************************************************
+     **** NUMBER OF ADDRESS POINTS WITH UNEXPECTED BUILDING_COUNT VALUES: 22
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#3-8 Address points with invalid values in LAST_EDIT_DATE...
+
+>>   Querying MADV_QA_AP_EDIT_DATE...
+
+     **********************************************************************************************
+     **** NUMBER OF ADDRESS POINTS WITH INVALID LAST_EDIT_DATE VALUES: 3
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#3-9 Counting address points where POINT_TYPE = 'BMPC' and they inappropriately link to structure lookup table records...
+
+>>   Querying MADV_QA_AP_BMPC_LUT...
+
+     **********************************************************************************************
+     **** NUMBER OF 'BMPC' ADDRESS POINTS THAT INCORRECTLY LINK TO STRUCTURE LOOKUP TABLE RECORDS: 4
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#3-10 Counting address points where LOC_ID values are inappropriate in relation to their POINT_TYPE values...
+
+>>    Querying MADV_QA_AP_LOCID_PTTYPE...
+
+      No address points where LOC_ID is inappropriate relative to POINT_TYPE were found in MAD_ADDRESS_POINTM.
+----
+
+#3-11 Counting address points that are missing an associated centroid (every address point should have one)...
+
+>>    Querying MADV_QA_AP_NO_CNTRD...
+
+      **********************************************************************************************
+      **** NUMBER OF ADDRESS POINTS WITHOUT AN ASSOCIATED CENTROID IN MAD_ADDRESS_POINTM_CENTROID: 3
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#3-12 Counting address points where ADDRESS_STATUS values are not within the set of accepted domain values...
+
+>>    Querying MADV_QA_AP_DOM_ADDRSTAT...
+
+      No address points with ADDRESS_STATUS values outside the accepted domain were found in MAD_ADDRESS_POINTM.
+----
+
+#3-13 Counting address points where ADDRESS_STATUS = 'UNLINKED' but still link to an active address...
+
+>>    Querying MADV_QA_AP_NOT_UNLINKED...
+
+      **********************************************************************************************
+      **** NUMBER OF ADDRESS POINTS WHERE ADDRESS_STATUS = 'UNLINKED', but is still linked to an active address: 1
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#3-14 Counting address points where GEOGRAPHIC_EDIT_STATUS values are not within the set of accepted domain values...
+
+>>    Querying MADV_QA_AP_DOM_GEOSTAT...
+
+      No address points with GEOGRAPHIC_EDIT_STATUS values outside the accepted domain were found in MAD_ADDRESS_POINTM.
+----
+
+#3-15 Counting address points where STRUCTURE_STATUS values are not within the set of accepted domain values...
+
+>>    Querying MADV_QA_AP_DOM_STRCTSTAT...
+
+      **********************************************************************************************
+      **** NUMBER OF ADDRESS POINTS WITH UNACCEPTABLE STRUCTURE_STATUS VALUES: 11
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#3-16 Counting address points where POINT_TYPE = 'PC' and ADDRESS_STATUS = 'NONZERO_NUM', but don't link to an address...
+
+>>    Querying MADV_QA_AP_PC_UNLINKED...
+
+      **********************************************************************************************
+      **** NUMBER OF 'PC' ADDRESS POINTS NOT LINKED TO ADDRESSES BUT HAVE ADDRESS_STATUS = 'NONZERO_NUM': 63
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#3-17 Counting address points that have no COMMUNITY_ID value assigned...
+
+>>    Querying MADV_QA_AP_NO_COMMID...
+
+      **********************************************************************************************
+      **** NUMBER OF ADDRESS POINTS WITHOUT AN ASSIGNED COMMUNITY_ID VALUE: 4
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#3-18 Counting address points with a COMMUNITY_ID different than the COMMUNITY_ID of the assigned street name in linked master addresses...
+
+>>    Querying MADV_QA_AP_MSN_COMMID_MISMATCH...
+
+      No address points with a COMMUNITY_ID discrepancy were found in MAD_ADDRESS_POINTM.
+----
+
+__________________________________
+
+(4) ADDRESS_POINTM_CENTROID CHECKS
+__________________________________
+
+#4-1 Duplicate CENTROID_ID values in MAD_ADDRESS_POINTM_CENTROID...
+
+>>   Querying MADV_QA_APC_DUPES...
+
+     **********************************************************************************************
+     **** NUMBER OF DUPLICATED APC CENTROID_ID VALUES: 23
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#4-2 MAD_ADDRESS_POINTM_CENTROID points with a CENTROID_ID value not found in addresses or address points...
+
+>>   Querying MADV_QA_APC_NOMATCH...
+
+     No orphaned centroids found in MAD_ADDRESS_POINTM_CENTROID.
+----
+
+#4-3 MAD_ADDRESS_POINTM_CENTROID points with LOC_ID and/or GEOGRAPHIC_TOWN_ID values different than those in associated address points...
+
+>>   Querying MADV_QA_APC_AP_GEO_MISMATCH...
+
+     **********************************************************************************************
+     **** NUMBER OF CENTROIDS WITH MISMATCHED LOC_ID AND/OR GEOGRAPHIC_TOWN_ID VALUES: 255
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+__________________________________
+
+(5) BASE_RANGE_VARIANT CHECKS
+__________________________________
+
+#5-1 BRV records where LINK_FEAT_ID isn't populated...
+
+>>   Querying MADV_QA_BRV_LINKFEAT...
+
+     **********************************************************************************************
+     **** NUMBER OF BRV RECORDS WITH UNPOPULATED LINK_FEAT_ID VALUES: 6
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#5-2 BRV records with an incorrect BASE_SEGMENT_ID...
+
+>>   Querying MADV_QA_BRV_NO_BSA...
+
+     **********************************************************************************************
+     **** NUMBER OF BRV RECORDS WITH AN INCORRECT SEGMENT ID: 1
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#5-3 BRV records with an incorrect RANGE_SOURCE_NAME_ID...
+
+>>   Querying MADV_QA_BRV_RSNID...
+
+     No incorrect RANGE_SOURCE_NAME_IDs found.
+----
+
+#5-4 BRV records with an incorrect STREETNAME_ID...
+
+>>   Querying MADV_QA_BRV_NO_SNID...
+
+     No incorrect STREETNAME_IDs found.
+----
+
+#5-5 BRV records with NULL street names that incorrectly have address ranges/parity...
+
+>>   Querying MADV_QA_BRV_NULL_STRTRNG...
+
+     No non-null address number ranges (or parity) associated with null street names were found.
+----
+
+#5-6 BRV records where streets with geometry incorrectly have a REAL_STREET value
+#     of 'A', 'E', 'M', or 'P' in MAD_MASTER_STREET_NAME...
+
+>>   Querying MADV_QA_BRV_REALSTREET...
+
+     **********************************************************************************************
+     **** NUMBER OF BRV RECORDS ASSOCIATED WITH STREET GEOMETRY AND REAL_STREET IN ('A','E','M','P'): 15
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#5-7 BRV records with ALIAS_FLAG values not in the acceptable domain...
+
+>>   Querying MADV_QA_BRV_DOM_ALIAS...
+
+     **********************************************************************************************
+     **** NUMBER OF BRV RECORDS WITH INAPPROPRIATE ALIAS_FLAG VALUES: 1
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#5-8 BRV records with multiple 'P' ALIAS_FLAG values assigned incorrectly...
+
+>>   Querying MADV_QA_BRV_ALIAS_MULTI_P...
+
+     **********************************************************************************************
+     **** NUMBER OF BRV RECORDS WITH MULTIPLE INAPPROPRIATE 'P' ALIAS_FLAG VALUES: 9
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#5-9 BRV records with mixed address range parity that incorrectly have 'P' instead of 'A' ALIAS_FLAG values...
+
+>>   Querying MADV_QA_BRV_ALIAS_PARITYMIX...
+
+     No incorrectly assigned 'P' ALIAS_FLAG values where address range parity is mixed were found.
+----
+
+#5-10 BRV records with any illegitimate STREET_NAME_VARIANT_ID values...
+
+>>    Querying MADV_QA_BRV_SNVID_XIST...
+
+      **********************************************************************************************
+      **** NUMBER OF BRV RECORDS WITH ILLEGITIMATE STREET_NAME_VARIANT_ID VALUES: 1
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#5-11 BRV records where primary STREET_NAME_IDs are not in sync with MAD_STREET_NAME_VARIANTS...
+
+>>    Querying MADV_QA_BRV_SNVID_SNID...
+
+      **********************************************************************************************
+      **** NUMBER OF BRV RECORDS WITH PRIMARY STREET_NAME_ID VALUES UNSYNC'D: 3
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#5-12 BRV records with ADDRESS_RANGE_TYPE values not in the acceptable domain...
+
+>>    Querying MADV_QA_BRV_DOM_RNG...
+
+      **********************************************************************************************
+      **** NUMBER OF BRV RECORDS WITH INCORRECT ADDRESS_RANGE_TYPE VALUES: 1
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#5-13 BRV records with 'B' or 'M' ADDRESS_RANGE_TYPE values incorrectly populated...
+
+>>    Querying MADV_QA_BRV_RNG_BM...
+
+      **********************************************************************************************
+      **** NUMBER OF BRV RECORDS WITH INCORRECT 'B' or 'M' ADDRESS_RANGE_TYPE VALUES: 5587
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#5-14 BRV records with 'N' ADDRESS_RANGE_TYPE and non-null range values...
+
+>>    Querying MADV_QA_BRV_RNG_N...
+
+      No address range values were found where ADDRESS_RANGE_TYPE = 'N'.
+----
+
+#5-15 BRV records where null street ranges have a non-null parity value...
+
+>>    Querying MADV_QA_BRV_NO_RNG_PRTY...
+
+      **********************************************************************************************
+      **** NUMBER OF BRV RECORDS THAT INCORRECTLY HAVE A NON-NULL PARITY VALUE: 5
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#5-16 BRV records with a left or right parity value outside the accepted domain...
+
+>>    Querying MADV_QA_BRV_DOM_PARITY...
+
+      No records with unacceptable parity values were found.
+----
+
+#5-17 BRV records where address range values have a parity different than recorded in the parity fields...
+
+>>    Querying MADV_QA_BRV_PARITY_EOM...
+
+      **********************************************************************************************
+      **** NUMBER OF BRV RECORDS WHERE ADDRESS RANGE VALUES AND PARITY FIELDS MISMATCH: 2
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#5-18 BRV records where a community ID value is empty or outside the accepted domain (excludes BOSTON)...
+
+>>    Querying MADV_QA_BRV_COMM_OK...
+
+      No records with unacceptable community ID values were found.
+----
+
+#5-19 BRV records where the left and right community values are not the same (includes BOSTON)...
+
+>>    Querying MADV_QA_BRV_COMM_MATCH...
+
+      No records with mismatched community ID values were found.
+----
+
+#5-20 BRV records where COMMUNITY_DIFFERENCE is empty or outside the accepted domain...
+
+>>    Querying MADV_QA_BRV_COMMDIFF...
+
+      **********************************************************************************************
+      **** NUMBER OF BRV RECORDS WITH UNACCEPTABLE COMMUNITY_DIFFERENCE VALUES: 1
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#5-21 BASE street arcs with more than 2 associated MSAG communities...
+
+>>    Querying MADV_QA_BRV_COMM_COUNT...
+
+      No BASE street arcs found with more than 2 MSAG communities associated with them.
+----
+
+#5-22 BRV records with left/right community ID values that don't sync with master street name community IDs...
+#    (includes BOSTON)
+
+>>    Querying MADV_QA_BRV_SNID_COMM...
+
+      No incorrect STREET_NAME_IDs or left/right COMMUNITY_IDs found.
+----
+
+#5-23 Master street name records where the comm ID doesn't match the BRV/SNV comm ID (includes BOSTON)...
+
+>>    Querying MADV_QA_BRV_COMMID_MISMATCH...
+
+      **********************************************************************************************
+      **** NUMBER OF STREET NAME RECORDS WITH A MISMATCHED COMMUNITY ID IN BRV/SNV: 82
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#5-24 BRV records where one or more address range values are not integers or spaces...
+
+>>    Querying MADV_QA_BRV_NUM_REGEXP...
+
+      **********************************************************************************************
+      **** NUMBER OF BRV RECORDS WITH ADDRESS RANGE VALUES THAT ARE NOT INTEGERS OR SPACES: 1
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#5-25 MAD_MASTER_ADDRESS records where an EVEN address number exceeds the street's EVEN address range in BRV...
+
+>>    Querying MADV_QA_BRV_MAX_E_MA...
+
+      **********************************************************************************************
+      **** NUMBER OF MASTER ADDRESS RECORDS WITH EVEN STREET NUMBERS EXCEEDING THE BRV RANGE: 55
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#5-26 MAD_MASTER_ADDRESS records where an ODD address number exceeds the street's ODD address range in BRV...
+
+>>    Querying MADV_QA_BRV_MAX_O_MA...
+
+      **********************************************************************************************
+      **** NUMBER OF MASTER ADDRESS RECORDS WITH ODD STREET NUMBERS EXCEEDING THE BRV RANGE: 111
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#5-27 BRV records where address ranges overlap on the same arc but the opposite side of the street (includes BOSTON)...
+
+>>    Querying MADV_QA_BRV_OVRLAP_ARC...
+
+      **********************************************************************************************
+      **** NUMBER OF BRV RECORDS WITH OVERLAPPING ADDRESS RANGES ON THE SAME ARC: 4
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#5-28 BRV records where address ranges overlap only on the LEFT side of the street (includes BOSTON)...
+
+>>    Querying MADV_QA_BRV_OVRLAP_LL...
+
+      **********************************************************************************************
+      **** NUMBER OF OVERLAPPING ADDRESS RANGES IN THE BRV THAT OVERLAP ON THE LEFT ONLY: 40
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#5-29 BRV records where address ranges overlap only on the RIGHT side of the street (includes BOSTON)...
+
+>>    Querying MADV_QA_BRV_OVRLAP_RR...
+
+      **********************************************************************************************
+      **** NUMBER OF OVERLAPPING ADDRESS RANGES IN THE BRV THAT OVERLAP ON THE RIGHT ONLY: 22
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#5-30 BRV records where address ranges overlap only on OPPOSITE sides of the street (includes BOSTON)...
+
+>>    Querying MADV_QA_BRV_OVRLAP_LR...
+
+      **********************************************************************************************
+      **** NUMBER OF OVERLAPPING ADDRESS RANGES IN THE BRV THAT OVERLAP ON OPPOSITE SIDES: 5
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#5-31 BRV records where COMMUNITY_DIFFERENCE shouldn't be 'N'...
+
+>>    Querying MADV_QA_BRV_COMMDIFF_NOT_N...
+
+      **********************************************************************************************
+      **** NUMBER OF BRV RECORDS WHERE COMMUNITY_DIFFERENCE SHOULDN'T BE 'N': 102
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#5-32 BRV records where COMMUNITY_DIFFERENCE shouldn't be 'D'...
+
+>>    Querying MADV_QA_BRV_COMMDIFF_NOT_D...
+
+      **********************************************************************************************
+      **** NUMBER OF BRV RECORDS WHERE COMMUNITY_DIFFERENCE SHOULDN'T BE 'D': 169
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#5-33 BRV records with LAST_EDIT_TYPE values not in the acceptable domain...
+
+>>    Querying MADV_QA_BRV_DOM_LASTEDIT...
+
+      **********************************************************************************************
+      **** NUMBER OF BRV RECORDS WITH INAPPROPRIATE LAST_EDIT_TYPE VALUES: 7
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#5-34 BRV records with ROUTE_TYPE values not in the acceptable domain...
+
+>>    Querying MADV_QA_BRV_DOM_RT_TYPE...
+
+      No incorrect ROUTE_TYPE values were found.
+----
+
+
+__________________________________
+
+(6) BASE_STREET_ARC CHECKS
+__________________________________
+
+#6-1 BASE street arcs without a link to at least one base range variant record...
+
+>>   Querying MADV_QA_BSA_NO_BRV...
+
+     **********************************************************************************************
+     **** NUMBER OF BSA ARCS WITHOUT ANY ASSOCIATED BRV RECORD(S): 2
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#6-2 BASE street arcs with null geometry (length = 0)...
+
+>>   Querying MADV_QA_BSA_NULL_GEOM...
+
+     No BASE street arcs found with null geometry.
+----
+
+#6-3 BASE street arcs where SOURCE_NAME_ID is NULL...
+
+>>   Querying MADV_QA_BSA_SRCNMID...
+
+     **********************************************************************************************
+     **** NUMBER OF BSA ARCS WITH NO SOURCE_NAME_ID: 3
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#6-4 BASE street arcs where one or more NAVTEQ* field values is NULL or incorrect...
+#    (affected fields: NAVTEQ_LINK_ID, NAVTEQ_FEATURE_ID, NAVTEQ_LEFT_AREA_ID, and NAVTEQ_RIGHT_AREA_ID)
+
+>>   Querying MADV_QA_BSA_NAVTEQ_IDS...
+
+     No BASE street arcs found with null or incorrect NAVTEQ* field values.
+----
+
+#6-5 BASE street arcs where LINK_FEAT_ID is NULL or an inappropriate value...
+
+>>   Querying MADV_QA_BSA_LINKFEAT...
+
+     No BASE street arcs found with inappropriate LINK_FEAT_ID values.
+----
+
+#6-6 BASE street arcs where FUNCTIONAL_CLASS is NULL or an inappropriate value...
+
+>>   Querying MADV_QA_BSA_DOM_FUNC_CLASS...
+
+     No BASE street arcs found with inappropriate FUNCTIONAL_CLASS values.
+----
+
+#6-7 BASE street arcs with left/right COMMUNITY ID values outside the accepted domain...
+
+>>   Querying MADV_QA_BSA_COMMIDS...
+
+     No BASE street arcs found with a left/right COMMUNITY ID value outside the accepted domain.
+----
+
+#6-8 BASE street arcs with left/right ZIP values outside the accepted domain...
+
+>>   Querying MADV_QA_BSA_ZIPS...
+
+     No BASE street arcs found with a left/right ZIP value outside the accepted domain.
+----
+
+#6-9 BASE street arcs with left/right STATE values outside the accepted domain...
+
+>>   Querying MADV_QA_BSA_STATES...
+
+     No BASE street arcs found with a left/right STATE value outside the accepted domain.
+----
+
+#6-10 BASE street arcs with fields requiring 'Y' or 'N' domain values that have a different value...
+#     (affected fields: DISJOINT_GEOGRAPHY, DISJOINT_RANGE, PAVED, PRIVATE, RAMP, BRIDGE, TOLLWAY, TUNNEL and FLIPPED)
+
+>>    Querying MADV_QA_BSA_DOM_YN...
+
+      **********************************************************************************************
+      **** NUMBER OF BSA ARCS WITHOUT 'Y' or 'N' IN ONE OR MORE IDENTIFIED FIELDS: 1
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#6-11 BASE street arcs with values in FERRY_TYPE outside the accepted domain...
+
+>>    Querying MADV_QA_BSA_DOM_FERRY...
+
+      No BASE street arcs found with a FERRY_TYPE value outside the accepted domain.
+----
+
+#6-12 BASE street arcs with invalid values in SEGMENT_CREATION_DATE...
+
+>>    Querying MADV_QA_BSA_SGMNT_DATE...
+
+      No BASE street arcs found with an invalid SEGMENT_CREATION_DATE value.
+----
+
+#6-13 BASE street arcs with invalid values in LAST_EDIT_DATE...
+
+>>    Querying MADV_QA_BSA_EDITDATE...
+
+      No BASE street arcs found with an invalid LAST_EDIT_DATE value.
+----
+
+#6-14 BASE street arcs with invalid values in LAST_EDIT_BY (2 or 3 chars only)...
+
+>>    Querying MADV_QA_BSA_EDITBY...
+
+      **********************************************************************************************
+      **** NUMBER OF BSA ARCS WITH INVALID LAST_EDIT_BY VALUES: 1
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#6-15 BASE street arcs with values in LAST_EDIT_TYPE outside the accepted domain...
+
+>>    Querying MADV_QA_BSA_DOM_EDITTYPE...
+
+      No BASE street arcs found with an invalid LAST_EDIT_TYPE value.
+----
+
+
+__________________________________
+
+(7) MASTER_STREET_NAME CHECKS
+__________________________________
+
+#7-1 Master street name records with COMMUNITY ID values outside the accepted domain...
+
+>>   Querying MADV_QA_MSN_COMMID...
+
+     No master street name records found with a COMMUNITY ID value outside the accepted domain.
+----
+
+#7-2 Master street name records where STR_NAME_BASE is NULL (should never be null)...
+
+>>   Querying MADV_QA_MSN_STRTNM...
+
+     No master street name records found where STR_NAME_BASE is NULL.
+----
+
+#7-3 Master street name records where concatenation of parsed fields <> STREET_NAME...
+
+>>   Querying MADV_QA_MSN_PARSED_NM...
+
+     No master street name records found where the concatenated parsed fields <> STREET_NAME.
+----
+
+#7-4 Master street name records where POST_TYPE is incorrectly NULL...
+#    (when STR_NAME_BASE like '%STREET%' and street name not like '%RAMP%' and real_street <> 'A' or 'E')
+
+>>   Querying MADV_QA_MSN_POSTTYPE...
+
+     No master street name records found where POST_TYPE is incorrectly NULL.
+----
+
+#7-5 Master street name records that are duplicates (based on STREET_NAME)...
+
+>>   Querying MADV_QA_MSN_DUPE_STRTNM...
+
+     No master street name records found that are duplicates (based on STREET_NAME).
+----
+
+#7-6 Master street name records that are duplicates (based on parsed fields)...
+
+>>   Querying MADV_QA_MSN_DUPE_PARSED...
+
+     No master street name records found that are duplicates (based on parsed fields).
+----
+
+#7-7 Master street name records where the text value '<NULL>' exists in a parsed field...
+
+>>   Querying MADV_QA_MSN_NULL_PARSED...
+
+     No master street name records found where '<NULL>' exists in a parsed field.
+----
+
+#7-8 Master street names assigned to non-PC address points but not found in BRV...
+
+>>   Querying MADV_QA_MSN_AP_ONLY...
+
+     **********************************************************************************************
+     **** NUMBER OF STREET NAMES ASSIGNED TO NON-PC POINTS BUT NOT FOUND IN BRV: 1716
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#7-9 Master street name records with REAL_STREET values outside the accepted domain...
+
+>>   Querying MADV_QA_MSN_DOM_REALSTREET...
+
+     No master street name records found with REAL_STREET values outside the accepted domain.
+----
+
+
+__________________________________
+
+(8) STREET_NAME_VARIANTS CHECKS
+__________________________________
+
+#8-1 Street name variant records with incorrect values of '<NULL>' in one or more parsed street fields...
+
+>>   Querying MADV_QA_SNV_NULL_FIELDS...
+
+     No street name variant records found with '<NULL>' values in parsed street fields.
+----
+
+#8-2 Street name variant records with STREET_NAME_ID values outside the accepted domain (excludes BOSTON)...
+
+>>   Querying MADV_QA_SNV_DOM_STNMID...
+
+     **********************************************************************************************
+     **** NUMBER OF SNV RECORDS WITH INAPPROPRIATE STREET_NAME_ID VALUES: 34564
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#8-3 Street name variant records with invalid values in LAST_EDIT_DATE...
+
+>>   Querying MADV_QA_SNV_EDITDATE...
+
+     No MAD_STREET_NAME_VARIANT records found with an invalid LAST_EDIT_DATE value.
+----
+
+#8-4 Street name variants that have one-to-many relationships with standardized non-route street names...
+
+>>   Querying MADV_QA_SNV_OTM...
+
+     **********************************************************************************************
+     **** NUMBER OF STREET NAME VARIANTS WITH ONE-TO-MANY RELATIONSHIPS TO NON-ROUTE STREET NAMES: 2995
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+
+__________________________________
+
+(9) EMERGENCY_SERVICE_ZONE CHECKS
+__________________________________
+
+#9-1 Emergency service zone polys that have identical (duplicate) comm/town/esn attributes...
+
+>>   Querying MADV_QA_ESZ_DUPES...
+
+     No emergency service zone polygons found with identical (duplicate) comm/town/esn attributes.
+----
+
+#9-2 Emergency service zone polys with non-unique ESN/ROUTE_URI values...
+
+>>   Querying MADV_QA_ESZ_ROUTE_URI_CNT...
+
+     No emergency service zone polygons found with non-unique ESN/ROUTE_URI values.
+----
+
+#9-3 Known ESN/MSAG COMMUNITY combinations not represented in MAD_EMERGENCY_SERVICE_ZONES...
+
+>>   Querying MADV_QA_ESZ_LUT_NOT_ESZ...
+
+     No ESN/MSAG COMMUNITY combinations found missing from MAD_EMERGENCY_SERVICE_ZONES.
+----
+
+#9-4 ESN/MSAG COMMUNITY combinations in MAD_EMERGENCY_SERVICE_ZONES not in ESN_COMM_LUT...
+
+>>   Querying MADV_QA_ESZ_NOT_LUT...
+
+     No ESN/MSAG COMMUNITY combinations in MAD_EMERGENCY_SERVICE_ZONES found missing from ESN_COMM_LUT.
+----
+
+#9-5 Emergency service zones that are erroneously associated with more than one MSAG community...
+
+>>   Querying MADV_QA_ESZ_MULTICOMM...
+
+     No emergency service zones found to be erroneously associated with more than one MSAG community.
+----
+
+#9-6 Emergency service zones that are associated with incorrect SIP URI values...
+
+>>   Querying MADV_QA_ESZ_SIP_URI...
+
+     No emergency service zones found to be associated with incorrect SIP URI values.
+----
+
+#9-7 Emergency service zone polys where ES_UNIQUE_ID isn't unique but should be...
+#    (pairs of duplicate IDs can exist at MSAG comm boundaries)
+
+>>   Querying MADV_QA_ESZ_UNIQUE_ID...
+
+     No emergency service zone polys found with non-unique ES_UNIQUE_ID values.
+----
+
+#9-8 Emergency service zone polys where the PRIMARY_PS value is different than in MAD_PSAP_SIP_URIS...
+
+>>   Querying MADV_QA_ESZ_PSAP_NAME...
+
+     **********************************************************************************************
+     **** NUMBER OF ESZ POLYS WHERE PRIMARY_PS IS DIFFERENT THAN IN MAD_PSAP_SIP_URIS:9
+     **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+     **********************************************************************************************
+----
+
+#9-9 Emergency service zone polys where TOWN and TOWN_ID combinations are not found in official towns...
+
+>>   Querying MADV_QA_ESZ_TOWN_CHK...
+
+     No emergency service zone polys found where the TOWN and TOWN_ID values assigned are outside the accepted domain.
+----
+
+
+__________________________________
+
+(10) SITE_NAMES CHECKS
+__________________________________
+
+#10-1 Unintentionally duplicated site name records in the same town...
+
+>>    Querying MADV_QA_SN_DUPES...
+
+      No duplicated site name records in the same town were found in MAD_SITE_NAMES.
+----
+
+#10-2 Site name records with a GEOGRAPHIC_TOWN_ID value different than the associated site polygon...
+
+>>    Querying MADV_QA_SN_GEOTOWNID_MISMATCH...
+
+      No site name records with mismatched geographic town IDs found in MAD_SITE_NAMES.
+----
+
+#10-3 Site name records with SITENAME_SOURCETYPE values outside the accepted domain ...
+
+>>    Querying MADV_QA_SN_DOM_SITENM_SRCTYPE...
+
+      No site name records with inappropriate SITENAME_SOURCETYPE values found in MAD_SITE_NAMES.
+----
+
+#10-4 Site name records where SITE_ID is associated with more than one site name record...
+
+>>    Querying MADV_QA_SN_SITEID_DUPE...
+
+      No site name records with non-unique SITE_ID values found in MAD_SITE_NAMES.
+----
+
+#10-5 Site name records with SITENAME_CLASS values outside the accepted domain ...
+
+>>    Querying MADV_QA_SN_DOM_SITENM_CLASS...
+
+      No site name records with inappropriate SITENAME_CLASS values found in MAD_SITE_NAMES.
+----
+
+#10-6 Site name records with CLN_FLAG values outside the accepted domain ...
+
+>>    Querying MADV_QA_SN_DOM_SITENM_CLN...
+
+      No site name records with inappropriate CLN_FLAG values found in MAD_SITE_NAMES.
+----
+
+
+__________________________________
+
+(11) ADDPT_STRUCT_LUT CHECKS
+__________________________________
+
+#11-1 Structure lookup table records where the ADDRESS_POINT_ID doesn't exist in address points...
+
+>>    Querying MADV_QA_ASL_AP_NOMATCH...
+
+      **********************************************************************************************
+      **** NUMBER OF STRUCTURE LOOKUP RECORDS WHERE THE ADDRESS_POINT_ID DOESN'T EXIST IN ADDRESS POINTS: 850
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#11-2 Structure lookup table records where the STRUCTURE_ID doesn't exist in MAD structure polygons...
+
+>>    Querying MADV_QA_ASL_STRUCT_NOMATCH...
+
+      **********************************************************************************************
+      **** NUMBER OF STRUCTURE LOOKUP RECORDS WHERE THE STRUCTURE_ID DOESN'T EXIST IN STRUCTURE POLYGONS: 5418
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#11-3 Structure lookup table records where STRUCTURE_TOWN_ID doesn't match the address point's GEOGRAPHIC_TOWN_ID...
+
+>>    Querying MADV_QA_ASL_BAD_TOWN_ID...
+
+      **********************************************************************************************
+      **** NUMBER OF STRUCTURE LOOKUP RECORDS WHERE STRUCTURE_TOWN_ID DOESN'T MATCH THE POINT'S GEOGRAPHIC_TOWN_ID: 1
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#11-4 Structure lookup table records that are non-unique and therefore functionally duplicative...
+
+>>    Querying MADV_QA_ASL_DUPES...
+
+      **********************************************************************************************
+      **** NUMBER OF STRUCTURE LOOKUP RECORDS THAT ARE DUPLICATES: 181
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+#11-5 Structure lookup table records indicative of a missing structure polygon not associated with ABC points...
+
+>>    Querying MADV_QA_ASL_NONABC_NULL_STRUCT...
+
+      **********************************************************************************************
+      **** NUMBER OF STRUCTURE LOOKUP RECORDS INDICATIVE OF NON-ABC MISSING STRUCTURE POLYS: 1024
+      **** EXAMINE AND FIX THE RECORDS IDENTIFIED IN THE QUERIED VIEW!
+      **********************************************************************************************
+----
+
+
+Daily MAD QA completed at 06:19:41 AM...
