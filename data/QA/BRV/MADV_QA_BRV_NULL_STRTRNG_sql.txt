@@ -1,0 +1,18 @@
+# View identifies any records in MAD_BASE_RANGE_VARIANTS with a NULL street name, but non-null  
+# address ranges (or parity).  Streets with no name should not have an address range.
+# DM - 9/13/16
+
+CREATE OR REPLACE VIEW MADV_QA_BRV_NULL_STRTRNG AS
+  SELECT BRV.OBJECTID, BRV.BASE_SEGMENT_ID, BRV.BASE_RANGE_VARIANT_ID, MSN.STREET_NAME_ID, MSN.STREET_NAME, MSN.COMMUNITY_ID, BRV.ADDRESS_RANGE_TYPE,
+  BRV.FROM_ADDRESS_LEFT, BRV.TO_ADDRESS_LEFT, BRV.PARITY_LEFT, BRV.FROM_ADDRESS_RIGHT, BRV.TO_ADDRESS_RIGHT, BRV.PARITY_RIGHT
+  FROM MAD_BASE_RANGE_VARIANTS BRV, MAD_MASTER_STREET_NAME MSN
+  WHERE BRV.STREET_NAME_ID = MSN.STREET_NAME_ID
+  AND MSN.STREET_NAME IS NULL
+  AND 
+    (brv.address_range_type <> 'N'
+     OR BRV.from_address_left <> ' '
+     OR BRV.to_address_left <> ' '
+     OR BRV.parity_left <> ' '
+     OR BRV.from_address_right <> ' '
+     OR BRV.to_address_right <> ' '
+     OR BRV.parity_right <> ' '); 

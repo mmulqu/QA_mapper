@@ -1,0 +1,30 @@
+# View identifies any features in MAD_ADDRESS_POINTM with a LOC_ID value that is inappropriate  
+# in relation to their POINT_TYPE values.  Only DBMP points should have LOC_ID values of 'MULTIPLE'.
+# Every other type of point should have a non-NULL value other than 'MULTIPLE', except points located outside
+# the state can have a NULL LOC_ID.
+# DM - 12/8/16
+# Added 'NONE' as acceptable LOC_ID where a point legitimately falls outside parcels.  (i.e. remote lighthouses) - 10/2/17 DM
+# Modified "OR (POINT_TYPE <> 'DBMP' AND (LOC_ID = 'MULTIPLE' OR (LOC_ID IS NULL AND GEOGRAPHIC_TOWN_ID IS NOT NULL))"
+# to allow 'NONE' LOC_IDs explicitly.  - 1/21/20 DM
+# Modified 6/15/26 to allow multipart geometries for ABC, PC, and NBAC point types. - DM
+
+CREATE OR REPLACE VIEW MAD.MADV_QA_AP_LOCID_PTTYPE AS 
+SELECT * FROM MAD_ADDRESS_POINTM AP
+WHERE (POINT_TYPE = 'DBMP' AND (LOC_ID IS NULL OR LOC_ID <> 'MULTIPLE'))
+OR (POINT_TYPE <> 'DBMP'
+    AND (LOC_ID = 'MULTIPLE'
+         OR (LOC_ID IS NOT NULL AND LOC_ID <> 'NONE' AND GEOGRAPHIC_TOWN_ID = -1)
+         )
+    AND NOT (POINT_TYPE IN ('ABC','NBAC','PC') AND LOC_ID = 'MULTIPLE' AND sde.st_numgeometries(shape) > 1)
+    )
+OR (LOC_ID IS NOT NULL AND LOC_ID NOT IN ('MULTIPLE','NONE') AND NOT REGEXP_LIKE(LOC_ID,'^(M|F)_(\d+)_(\d+)'))
+
+########################################################################
+(older version below)
+
+CREATE OR REPLACE VIEW MAD.MADV_QA_AP_LOCID_PTTYPE AS 
+SELECT * FROM MAD_ADDRESS_POINTM AP
+WHERE (POINT_TYPE = 'DBMP' AND (LOC_ID IS NULL OR LOC_ID <> 'MULTIPLE'))
+OR (POINT_TYPE <> 'DBMP' AND (LOC_ID = 'MULTIPLE' OR (LOC_ID IS NOT NULL AND LOC_ID <> 'NONE' AND GEOGRAPHIC_TOWN_ID = -1))
+    AND NOT (POINT_TYPE = 'ABC' AND LOC_ID = 'MULTIPLE' AND BUILDING_COUNT > 1))
+OR (LOC_ID IS NOT NULL AND LOC_ID NOT IN ('MULTIPLE','NONE') AND NOT REGEXP_LIKE (LOC_ID,'^(M|F)_(\d+)_(\d+)'));

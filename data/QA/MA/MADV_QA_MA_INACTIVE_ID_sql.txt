@@ -1,0 +1,15 @@
+# SQL view to show all records in MAD_MASTER_ADDRESS that have a populated INACTIVE_ADDRESS_ID
+# value, but that value is not associated with the MASTER_ADDRESS_ID of an address that has an
+# ADDRESS_STATUS value of 'INACTIVE'.  The fix is to either change the status of the associated
+# address to 'INACTIVE' if it truly is inactive, or change the INACTIVE_ADDRESS_ID of the identified
+# record to represent the address record it was meant to replace, or nullify the INACTIVE_ADDRESS_ID 
+# if it doesn't represent any inactivated address record.
+# DM - 6/21/19
+# OBSOLETE!  REMOVED FROM QA 8/28/19
+
+CREATE OR REPLACE VIEW MADV_QA_MA_INACTIVE_ID AS
+SELECT * FROM MAD_MASTER_ADDRESS
+WHERE INACTIVE_ADDRESS_ID IS NOT NULL
+AND INACTIVE_ADDRESS_ID NOT IN (SELECT MASTER_ADDRESS_ID FROM MAD_MASTER_ADDRESS
+WHERE ADDRESS_STATUS = 'INACTIVE')
+ORDER BY GEOGRAPHIC_TOWN_ID, STREET_NAME_ID, FULL_NUMBER_STANDARDIZED;

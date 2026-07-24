@@ -1,0 +1,23 @@
+# View identifies any records in MAD_BASE_RANGE_VARIANTS associated with a given BASE_SEGMENT_ID
+# that has more than 2 unique community IDs associated with it.  No arc can or should have more than
+# 2 MSAG comms associated with it unless there's an attribute error or an MSAG community boundary 
+# intersects it perpendicularly without a node existing at the intersection with the arc, or it
+# violates 2-dimensional geometry rules.
+# DM - 10/7/16
+
+CREATE OR REPLACE VIEW MADV_QA_BRV_COMM_COUNT AS
+SELECT * FROM MAD_BASE_RANGE_VARIANTS
+WHERE BASE_SEGMENT_ID IN (
+SELECT BASE_SEGMENT_ID FROM (
+WITH L AS
+  (SELECT BASE_SEGMENT_ID, COMMUNITY_ID_LEFT, COUNT(*) OVER (PARTITION BY BASE_SEGMENT_ID) AS CNT  
+  FROM MAD_BASE_RANGE_VARIANTS
+  WHERE ALIAS_FLAG = 'P'),
+R AS
+  (SELECT BASE_SEGMENT_ID, COMMUNITY_ID_RIGHT, COUNT(*) OVER (PARTITION BY BASE_SEGMENT_ID) AS CNT  
+  FROM MAD_BASE_RANGE_VARIANTS
+  WHERE ALIAS_FLAG = 'P')
+SELECT DISTINCT L.BASE_SEGMENT_ID, L.CNT NUMBER_LEFT_COMM_IDS, R.CNT NUMBER_RIGHT_COMM_IDS
+FROM L
+JOIN R ON L.BASE_SEGMENT_ID = R.BASE_SEGMENT_ID
+WHERE L.CNT > 2 OR R.CNT > 2));

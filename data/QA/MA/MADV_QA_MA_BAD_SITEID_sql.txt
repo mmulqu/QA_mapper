@@ -1,0 +1,14 @@
+# A view that identifies any records in MAD_MASTER_ADDRESS that have been assigned a SITE_ID value that doesn't
+# exist in MAD_SITE_POLYM.  (Impossible since site polygons are the parent/origin of all SITE_ID values)
+# Its likely that a site polygon was edited without the transaction propagating through the MAD, or an issue
+# with FDC integration occurred.  The SITE_ID will probably need to be changed to match a correct site polygon,
+# or deleted from the address record(s) entirely.
+# DM - 8/29/16
+
+
+CREATE OR REPLACE VIEW MADV_QA_MA_BAD_SITEID AS
+SELECT * FROM MAD_MASTER_ADDRESS MA
+WHERE NOT EXISTS (SELECT * FROM MAD_SITE_POLYM SITE
+WHERE MA.SITE_ID = SITE.SITE_ID)
+AND SITE_ID IS NOT NULL;
+

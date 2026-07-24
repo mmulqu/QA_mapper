@@ -1,6 +1,6 @@
 # Local LM Studio agent bridge
 
-The workbench can now use a local LM Studio model for one synthetic QA case at a time. It is a training-only integration: it can explain case evidence and stage a controlled fixture draft for review, but it cannot access MAD, ArcPy, a database, or production credentials.
+The workbench can use a local LM Studio model for one bounded QA investigation at a time. It can read the supplied Rockport test export through restricted tools, explain case evidence, and stage a controlled review draft, but it cannot access production MAD credentials or publish without a human-approved server-side handoff.
 
 ## Run locally
 
@@ -24,6 +24,20 @@ For manual development:
 4. Open the workbench and select **Agent** on the map. Ask a question or select **Review the evidence and stage a draft if it is safe.**
 
 The bridge listens only on `127.0.0.1:8787`; Vite proxies browser `/api/*` requests to it. The browser never connects directly to LM Studio on port 1234.
+
+## Live investigation stream
+
+Selecting a QA category opens a center-screen activity transcript instead of a static loading card. `POST /api/qa/issues/:viewId/investigate-stream` returns server-sent events for:
+
+- model turns and final output;
+- reasoning/thinking text when the active model exposes it;
+- on-demand skill loads;
+- controlled tool calls and their bounded result summaries; and
+- QA-evidence, town-resolution, proposal, and town-extract phases.
+
+The stream adapter is model-name agnostic. It recognizes OpenAI-compatible `reasoning_content`, `reasoning`, `thinking`, and `analysis` deltas, typed reasoning content blocks, and common `<think>`, `<analysis>`, or `<reasoning>` template tags. A model that exposes no reasoning still streams its ordinary output and tool activity. The chosen model must still support the tool-calling behavior required by the QA agent.
+
+The browser receives only display-safe summaries for tools; full tool results remain inside the server-side agent loop. The stream sends keep-alives during long local generations and cancels the upstream LM Studio request when the reviewer leaves the stream.
 
 ## Configuration
 
@@ -50,12 +64,22 @@ Use `http://127.0.0.1:8787/api/health` to confirm that the bridge sees the confi
 The model is limited to the selected case and receives these tools:
 
 - `get_case`
+- `get_qa_issue_evidence`
+- `get_town_extract_summary`
+- `get_qa_investigation_packet` — combined case, QA-row, town-resolution, and relationship context for an automatic category investigation
 - `get_feature`
 - `get_related`
 - `stage_fixture_draft`
 - `validate_draft`
+- `get_mad_schema_context` — a narrow read of approved MAD relationship metadata
+- `massgis_search_layers`
+- `massgis_describe_layer`
+- `massgis_find_in_town`
+- `massgis_find_nearby`
 
-`stage_fixture_draft` is deliberately narrow for this MVP: it stages the predeclared, synthetic fixture proposal from `src/data/cases.js`, retains its source snapshot hash, and runs local validation. It does not create arbitrary geometry or attributes, write any source record, or publish an edit. Evidence-only cases always withhold a draft.
+The MassGIS GeoServer tools are read-only and query only public MassGIS WFS evidence. They run from the local bridge, save any returned GeoJSON only under the ignored `.runtime/geoserver-evidence/` directory, and never receive MAD credentials. The agent describes a GeoServer layer before interpreting it and treats the result as supporting evidence, never as the sole basis for an edit.
+
+`stage_fixture_draft` is deliberately narrow for this MVP: it stages the case's server-declared proposal, retains its source snapshot hash, and runs local validation. It does not create arbitrary geometry or attributes, write any source record, or publish an edit. Evidence-only cases always withhold a draft. A real-data proposal may also be marked reviewable but not publishable when an export omitted the stable identifier required to target the edit safely.
 
 The browser receives the staged `changes` object and shows it in the existing red/current and green/proposed diff sheet. The reviewer can accept only from that complete sheet: acceptance freezes a server-side publisher handoff and validates it through `scripts/arcpy_publish.py`. The default local mode does not edit MAD. Rejecting a draft captures a short comment that the next case-scoped agent request receives as revision context.
 
@@ -66,6 +90,8 @@ The local agent has an allow-listed skill registry under `agent-skills/`. It rec
 When a reviewer explicitly names a skill or uses one of its declared triggers, the model may call the restricted `load_skill` tool. The bridge reads only the registered `SKILL.md`, returns it to that one agent turn, and records the load in the browser's tool trail. The model cannot request an arbitrary file path or discover files outside this registry.
 
 The initial test skill is [QA Evidence Brief](../agent-skills/qa-evidence-brief/SKILL.md). Ask: “Use the QA Evidence Brief skill to give me a field evidence brief.” The expected tool sequence is `load_skill` then `get_case`, followed by the skill's Markdown brief. A normal question, such as “What is the case ID?”, should not load it.
+
+The three additional registered skills are [MAD QA AP](../agent-skills/mad-qa-ap/SKILL.md), [MAD Schema Intelligence](../agent-skills/mad-schema-intelligence/SKILL.md), and [MassGIS GeoServer](../agent-skills/massgis-geoserver/SKILL.md). For external evidence, ask: “Use MassGIS GeoServer to find public open-space polygons near this coordinate.” The expected sequence is `load_skill`, `massgis_search_layers`, `massgis_describe_layer`, then the bounded town or proximity lookup.
 
 ## Local proposal registry
 
@@ -82,5 +108,7 @@ On 2026-07-24, the bridge was exercised against the local LM Studio model `qwen3
 - It withheld a draft for the evidence-only case `MAD-2026-1804`.
 - It loaded `qa-evidence-brief` only after an explicit skill request, then read the case and returned the required three-section Markdown brief.
 - It answered a routine case-ID question without loading the skill.
+- It investigated `MADV_QA_ASL_DUPES`, read the Rockport record evidence, resolved Rockport through the town/community lookup, and staged the controlled two-to-one lookup-row proposal.
+- It kept that proposal's Accept action blocked because the DBF export did not retain the lookup `OBJECTID`.
 
-This confirms the browser proxy, local bridge, LM Studio tool loop, draft validation, and response contract. It is not a test against production MAD data.
+This confirms the browser proxy, local bridge, LM Studio tool loop, Rockport town-extract adapter, draft validation, and response contract. It is not a test against production MAD.

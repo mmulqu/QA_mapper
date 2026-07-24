@@ -1,0 +1,8 @@
+# View identifies any records in MAD_MASTER_ADDRESS that have a UNIT value with unexpected characters.
+# DM - 5/27/22
+
+CREATE OR REPLACE VIEW MADV_QA_MA_UNIT_REGEXP AS
+SELECT * FROM MAD_MASTER_ADDRESS
+WHERE UNIT IS NOT NULL
+AND NOT REGEXP_LIKE(UNIT,'^[a-zA-Z0-9 \.()''&/-]+$')
+ORDER BY UNIT;

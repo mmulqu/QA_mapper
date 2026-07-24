@@ -1,0 +1,13 @@
+# View identifies any records in MAD_BASE_RANGE_VARIANTS with mismatched community IDs.
+# COMMUNITY_ID_LEFT and COMMUNITY_ID_RIGHT should be identical for each street's BRV record(s).
+# (excludes BOSTON)
+# DM - 9/14/16
+# Reincorporated Boston data by commenting out exclusion code.  10/19/17 - DM
+
+CREATE OR REPLACE VIEW MADV_QA_BRV_COMM_MATCH AS            
+SELECT OBJECTID, BASE_SEGMENT_ID, BASE_RANGE_VARIANT_ID, STREET_NAME_ID, COMMUNITY_ID_LEFT, COMMUNITY_ID_RIGHT
+FROM MAD_BASE_RANGE_VARIANTS
+WHERE COMMUNITY_ID_LEFT <> COMMUNITY_ID_RIGHT
+--AND (community_id_left != ALL (37, 45, 58, 85, 92, 155, 158, 189, 271, 274, 296, 352, 381) 
+--AND community_id_right != ALL (37, 45, 58, 85, 92, 155, 158, 189, 271, 274, 296, 352, 381))
+ORDER BY COMMUNITY_ID_LEFT, COMMUNITY_ID_RIGHT, STREET_NAME_ID;

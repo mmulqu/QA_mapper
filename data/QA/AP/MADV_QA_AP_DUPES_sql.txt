@@ -1,0 +1,15 @@
+# View shows any address points in MAD_ADDRESS_POINTM that exist as unintentional duplicates (non-unique ADDRESS_POINT_ID)
+# Every point must have a unique ADDRESS_POINT_ID value.  Duplicates need to either be deleted if obsolete, or have their 
+# ID changed to be unique.  If changed, it is important to take excessive caution in updating all other related MAD content 
+# first.
+# DM - 8/29/16
+
+CREATE OR REPLACE VIEW MAD.MADV_QA_AP_DUPES AS 
+SELECT * FROM MAD_ADDRESS_POINTM AP
+WHERE EXISTS
+   (SELECT * FROM
+      (SELECT DISTINCT ADDRESS_POINT_ID,COUNT (ADDRESS_POINT_ID) AS POINTCOUNT FROM MAD_ADDRESS_POINTM
+       GROUP BY ADDRESS_POINT_ID) QRY
+    WHERE POINTCOUNT > 1
+    AND AP.ADDRESS_POINT_ID = QRY.ADDRESS_POINT_ID)
+ORDER BY GEOGRAPHIC_TOWN_ID, ADDRESS_POINT_ID, LAST_EDIT_DATE;

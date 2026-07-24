@@ -8,7 +8,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "vitest run && node --test scripts/agent-server.test.mjs"
+    "test": "vitest run && node --test scripts/*.test.mjs"
   },
   "dependencies": {
     "leaflet": "^1.9.4",

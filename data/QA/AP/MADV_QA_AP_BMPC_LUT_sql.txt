@@ -1,0 +1,12 @@
+# A view that identifies any building multipoint centroids (POINT_TYPE = 'BMPC') in MAD_ADDRESS_POINTM
+# that have an associated record in the lookup table MAD_ADDPT_STRUCT_LUT linking them to a structure
+# polygon, but shouldn't. BMPC points, by definition, can not be assigned to any individual structures
+# and there are other BC or BMP points in the same parcel that do link to the individual structures.
+# DM - 12/6/16
+
+CREATE OR REPLACE VIEW MADV_QA_AP_BMPC_LUT AS
+SELECT * FROM MAD_ADDRESS_POINTM AP
+WHERE POINT_TYPE = 'BMPC'
+AND EXISTS (SELECT * FROM MAD_ADDPT_STRUCT_LUT LUT
+WHERE AP.ADDRESS_POINT_ID = LUT.ADDRESS_POINT_ID);
+

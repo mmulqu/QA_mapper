@@ -1,0 +1,13 @@
+# View shows any address points in MAD_ADDRESS_POINTM where POINT_TYPE = 'PC' and ADDRESS_STATUS = 'NONZERO_NUM'
+# but it doesn't link to any address record.  NONZERO_NUM PC points are supposed to represent parcel centroids
+# that link to an address record with a non-zero, non-null street number.  These points should likely have their
+# address status changed to 'UNLINKED'.
+# DM - 1/25/18
+
+CREATE OR REPLACE VIEW MADV_QA_AP_PC_UNLINKED AS
+SELECT * FROM MAD_ADDRESS_POINTM AP
+WHERE POINT_TYPE = 'PC'
+AND ADDRESS_STATUS = 'NONZERO_NUM'
+AND NOT EXISTS (SELECT * FROM MAD_MASTER_ADDRESS MA
+WHERE AP.ADDRESS_POINT_ID = MA.ADDRESS_POINT_ID)
+ORDER BY GEOGRAPHIC_TOWN_ID, ADDRESS_POINT_ID;

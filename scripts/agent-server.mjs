@@ -6,10 +6,11 @@ import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
 import { cases } from '../src/data/cases.js'
 import { getFeatureRecords, relatedKeys } from '../src/lib/featureRecords.js'
+import { findQaIssue, loadQaCatalog } from './qa-workflow.mjs'
 
 const DEFAULT_LM_STUDIO_URL = 'http://127.0.0.1:1234/v1'
 const DEFAULT_MODEL = 'qwen3-4b-thinking-2507'
-const MAX_AGENT_TURNS = 5
+const MAX_AGENT_TURNS = 8
 const MAX_REQUEST_BYTES = 24 * 1024
 const MAX_REVIEWER_COMMENT = 1200
 const PUBLISHER_TIMEOUT_MS = 15_000
@@ -18,6 +19,14 @@ const SKILL_DIRECTORY = resolve(fileURLToPath(new URL('../agent-skills/', import
 const PUBLISHER_SCRIPT = resolve(PROJECT_ROOT, 'scripts', 'arcpy_publish.py')
 const PUBLISHER_JOB_DIRECTORY = resolve(PROJECT_ROOT, '.runtime', 'mad-publisher-jobs')
 const PROPOSAL_HISTORY_PATH = resolve(PROJECT_ROOT, '.runtime', 'proposal-history.csv')
+const GEOSERVER_SKILL_DIRECTORY = resolve(SKILL_DIRECTORY, 'massgis-geoserver')
+const GEOSERVER_SCRIPT_DIRECTORY = resolve(GEOSERVER_SKILL_DIRECTORY, 'scripts')
+const GEOSERVER_EVIDENCE_DIRECTORY = resolve(PROJECT_ROOT, '.runtime', 'geoserver-evidence')
+const MAD_SCHEMA_REFERENCE_DIRECTORY = resolve(SKILL_DIRECTORY, 'mad-schema-intelligence', 'references')
+const MAD_FIXTURE_ADAPTER = resolve(PROJECT_ROOT, 'scripts', 'mad_fixture_adapter.py')
+const GEOSERVER_TIMEOUT_MS = 125_000
+const MAD_FIXTURE_TIMEOUT_MS = 125_000
+const MAX_GEOSERVER_FEATURES = 100
 const PROPOSAL_HISTORY_FIELDS = [
   'event_id',
   'recorded_at',
@@ -38,6 +47,7 @@ const ALLOWED_OPERATION_TYPES = new Set([
   'move_address_point',
   'link_address_to_point',
   'link_point_to_structure',
+  'remove_duplicate_structure_lookup',
 ])
 
 const SKILL_CATALOG = [
@@ -48,10 +58,34 @@ const SKILL_CATALOG = [
     triggers: ['QA Evidence Brief', 'field evidence brief', 'use the QA evidence brief skill'],
     file: 'qa-evidence-brief/SKILL.md',
   },
+  {
+    id: 'mad-qa-ap',
+    name: 'MAD QA AP',
+    description: 'Apply address-point QA rules, point-type semantics, and fix gating to MADV_QA_AP investigations.',
+    triggers: ['MAD QA AP', 'MADV_QA_AP', 'address point QA', 'point type', 'address point duplicate'],
+    file: 'mad-qa-ap/SKILL.md',
+  },
+  {
+    id: 'mad-schema-intelligence',
+    name: 'MAD Schema Intelligence',
+    description: 'Explain MAD table relationships and approved join paths before drawing a data-model conclusion.',
+    triggers: ['MAD Schema Intelligence', 'MAD schema', 'join path', 'table relationship', 'relationship map'],
+    file: 'mad-schema-intelligence/SKILL.md',
+  },
+  {
+    id: 'massgis-geoserver',
+    name: 'MassGIS GeoServer',
+    description: 'Read public MassGIS GeoServer layers for scoped external map evidence such as open space or municipal context.',
+    triggers: ['MassGIS GeoServer', 'GeoServer', 'open space', 'public MassGIS layer', 'nearby open space'],
+    file: 'massgis-geoserver/SKILL.md',
+  },
 ]
 
 const stagedDrafts = new Map()
 const reviewerFeedback = new Map()
+const dynamicCases = new Map()
+const townExtractCache = new Map()
+const townRecordCache = new Map()
 
 function compactText(value, maxLength) {
   const text = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''
@@ -232,6 +266,9 @@ export function recordReviewerRejection(caseItem, draft, comment, { persist = fa
 
 export function createPublisherHandoff(caseItem, draft, reviewerNote = '') {
   if (!draft?.validation?.passed) throw new Error('A passed draft validation is required before approval.')
+  if (caseItem.publishEligible === false) {
+    throw new Error(caseItem.publishBlocker || 'This proposal cannot be published from the current source extract.')
+  }
   if (!draft.sourceSnapshot?.rowHash) throw new Error('The draft has no source snapshot precondition.')
   if (!draft.operations?.length) throw new Error('The draft has no controlled operations to publish.')
 
@@ -283,16 +320,16 @@ function persistPublisherHandoff(handoff) {
   return path
 }
 
-function runProcess(command, args) {
+function runProcess(command, args, { cwd = PROJECT_ROOT, timeoutMs = PUBLISHER_TIMEOUT_MS } = {}) {
   return new Promise((resolveProcess) => {
     let stdout = ''
     let stderr = ''
     let timedOut = false
-    const child = spawn(command, args, { cwd: PROJECT_ROOT, shell: false, windowsHide: true })
+    const child = spawn(command, args, { cwd, shell: false, windowsHide: true })
     const timeout = setTimeout(() => {
       timedOut = true
       child.kill()
-    }, PUBLISHER_TIMEOUT_MS)
+    }, timeoutMs)
 
     child.stdout.on('data', (chunk) => { stdout += chunk.toString() })
     child.stderr.on('data', (chunk) => { stderr += chunk.toString() })
@@ -305,6 +342,133 @@ function runProcess(command, args) {
       resolveProcess({ ok: code === 0 && !timedOut, code, stdout, stderr, timedOut })
     })
   })
+}
+
+async function runMadFixtureAdapter(command, argumentsList = []) {
+  const python = process.env.MAD_AGENT_PYTHON || 'python'
+  const result = await runProcess(python, [MAD_FIXTURE_ADAPTER, command, ...argumentsList], {
+    cwd: PROJECT_ROOT,
+    timeoutMs: MAD_FIXTURE_TIMEOUT_MS,
+  })
+  const output = result.stdout.trim()
+  let payload = null
+  try {
+    payload = output ? JSON.parse(output) : null
+  } catch {
+    payload = null
+  }
+  if (!result.ok || !payload?.ok) {
+    throw new Error(payload?.error || result.error || result.stderr.trim() || 'The local MAD fixture adapter did not return valid JSON.')
+  }
+  return payload.result
+}
+
+async function getTownExtract(townId) {
+  const normalizedTownId = boundedInteger(townId, {
+    fallback: 0,
+    minimum: 1,
+    maximum: 999,
+    label: 'Town ID',
+  })
+  if (!townExtractCache.has(normalizedTownId)) {
+    townExtractCache.set(
+      normalizedTownId,
+      runMadFixtureAdapter('town-extract', ['--town-id', String(normalizedTownId)])
+        .catch((error) => {
+          townExtractCache.delete(normalizedTownId)
+          throw error
+        }),
+    )
+  }
+  return townExtractCache.get(normalizedTownId)
+}
+
+async function getTownRecordBundle(townId, recordKey) {
+  const normalizedTownId = boundedInteger(townId, {
+    fallback: 0,
+    minimum: 1,
+    maximum: 999,
+    label: 'Town ID',
+  })
+  const safeRecordKey = requiredText(recordKey, 'Record key', 240)
+  if (!/^[a-z-]+:[A-Za-z0-9_{}|.-]+$/.test(safeRecordKey)) {
+    throw new Error('Record key contains unsupported characters.')
+  }
+  const cacheKey = `${normalizedTownId}:${safeRecordKey}`
+  if (!townRecordCache.has(cacheKey)) {
+    townRecordCache.set(
+      cacheKey,
+      runMadFixtureAdapter('record', [
+        '--town-id', String(normalizedTownId),
+        '--record-key', safeRecordKey,
+      ]).catch((error) => {
+        townRecordCache.delete(cacheKey)
+        throw error
+      }),
+    )
+  }
+  return townRecordCache.get(cacheKey)
+}
+
+function buildEvidenceOnlyQaCase(issue, adapterResult) {
+  return {
+    id: `${issue.id}-STATEWIDE-EVIDENCE`,
+    address: issue.description,
+    municipality: 'Statewide',
+    issueType: issue.group.label,
+    issueCode: issue.id,
+    status: 'evidence',
+    priority: 'Review',
+    confidence: 0,
+    recommendation: 'Connect the production QA view rows before proposing a record-level correction.',
+    rationale: adapterResult.message,
+    publishEligible: false,
+    publishBlocker: 'No record-level QA result or ID-preserving town extract is available for this category.',
+    evidence: [{
+      source: 'MAD_QA_20260724.txt',
+      date: '2026-07-24',
+      detail: `${issue.count.toLocaleString()} statewide result records were reported.`,
+    }],
+    operations: [],
+    changes: [],
+    snapshot: {
+      exportedAt: '2026-07-24T06:00:04-04:00',
+      source: 'MAD statewide QA count report',
+      version: 'MAD_QA_20260724',
+      rowHash: `count:${issue.count}`,
+      wkid: null,
+    },
+    qaEvidence: {
+      viewId: issue.id,
+      category: issue.group.label,
+      statewideCount: issue.count,
+      localAdapterSupported: false,
+      limitation: adapterResult.message,
+    },
+    townExtractSummary: null,
+  }
+}
+
+async function prepareQaInvestigation(viewId) {
+  const catalog = loadQaCatalog()
+  const issue = findQaIssue(viewId, catalog)
+  if (!issue) throw new Error('The selected QA view is not a non-zero issue in the current report.')
+
+  const adapterResult = await runMadFixtureAdapter('investigate', ['--view-id', issue.id])
+  const caseItem = adapterResult.cases?.[0]
+    ? {
+        ...adapterResult.cases[0],
+        qaEvidence: {
+          ...adapterResult.cases[0].qaEvidence,
+          category: issue.group.label,
+          statewideCount: issue.count,
+          localMatchCount: adapterResult.cases.length,
+        },
+      }
+    : buildEvidenceOnlyQaCase(issue, adapterResult)
+
+  dynamicCases.set(caseItem.id, caseItem)
+  return { catalog, issue, adapterResult, caseItem }
 }
 
 async function validatePublisherHandoff(handoffPath, mode) {
@@ -353,8 +517,147 @@ export function loadSkill(skillId) {
   }
 }
 
+const SCHEMA_CONTEXT_SUBJECTS = {
+  'address-point-relationships': [
+    'MAD.MAD_ADDRESS_POINTM',
+    'MAD.MAD_ADDRESS_POINTM_CENTROID',
+    'MAD.MAD_ADDPT_STRUCT_LUT',
+    'MAD.MAD_STRUCTURES_POLY',
+  ],
+  'master-address-relationships': [
+    'MAD.MAD_MASTER_ADDRESS',
+    'MAD.MAD_ADDRESS_VARIANTS',
+    'MAD.MAD_MASTER_STREET_NAME',
+  ],
+  'street-and-range-relationships': [
+    'MAD.MAD_MASTER_STREET_NAME',
+    'MAD.MAD_BASE_RANGE_VARIANTS',
+    'MAD.MAD_BASE_STREET_ARC',
+  ],
+  'site-and-source-relationships': [
+    'MAD.MAD_SITE_NAMES',
+    'MAD.MAD_SITE_POLYM',
+    'MAD.MAD_SOURCE',
+  ],
+}
+
+const GEOSERVER_SCRIPT_FILES = {
+  search: 'massgis-search-layers.py',
+  describe: 'massgis-describe-schema.py',
+  in_town: 'massgis-find-in-town.py',
+  nearby: 'massgis-find-nearby.py',
+}
+
+function extractMarkdownSection(markdown, heading) {
+  const marker = `### ${heading}`
+  const start = markdown.indexOf(marker)
+  if (start < 0) return null
+  const next = markdown.indexOf('\n### ', start + marker.length)
+  return markdown.slice(start, next < 0 ? undefined : next).trim()
+}
+
+function readMadSchemaContext(subject) {
+  const tables = SCHEMA_CONTEXT_SUBJECTS[subject]
+  if (!tables) throw new Error(`Unknown schema context: ${subject}`)
+
+  const schemaSnapshot = readFileSync(resolve(MAD_SCHEMA_REFERENCE_DIRECTORY, 'schema_snapshot.md'), 'utf8')
+  const relationshipMap = readFileSync(resolve(MAD_SCHEMA_REFERENCE_DIRECTORY, 'relationship_map.md'), 'utf8')
+  const relationshipLines = relationshipMap
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('|') && tables.some((table) => line.includes(table)))
+
+  return {
+    subject,
+    source: 'mad-schema-intelligence references generated from MAD metadata',
+    tables: tables.map((table) => ({ table, definition: extractMarkdownSection(schemaSnapshot, table) })).filter((item) => item.definition),
+    relationships: relationshipLines,
+  }
+}
+
+function boundedInteger(value, { fallback, minimum, maximum, label }) {
+  const number = value === undefined ? fallback : Number(value)
+  if (!Number.isInteger(number) || number < minimum || number > maximum) {
+    throw new Error(`${label} must be an integer between ${minimum} and ${maximum}.`)
+  }
+  return number
+}
+
+function requiredText(value, label, maxLength = 160) {
+  const text = typeof value === 'string' ? value.trim() : ''
+  if (!text || text.length > maxLength) throw new Error(`${label} is required and must be ${maxLength} characters or fewer.`)
+  return text
+}
+
+function massgisLayerId(value) {
+  const layerId = requiredText(value, 'Layer ID', 120)
+  if (!/^massgis:[A-Za-z0-9_.]+$/.test(layerId)) {
+    throw new Error('Layer ID must be a fully qualified MassGIS layer ID, such as massgis:GISDATA.OPENSPACE_POLY.')
+  }
+  return layerId
+}
+
+async function runGeoServerCommand(command, argumentsList) {
+  const scriptName = GEOSERVER_SCRIPT_FILES[command]
+  if (!scriptName) throw new Error(`GeoServer command is not allow-listed: ${command}`)
+
+  const python = process.env.MAD_AGENT_PYTHON || 'python'
+  const scriptPath = resolve(GEOSERVER_SCRIPT_DIRECTORY, scriptName)
+  const result = await runProcess(python, [scriptPath, ...argumentsList, '--workspace', GEOSERVER_EVIDENCE_DIRECTORY], {
+    cwd: GEOSERVER_SKILL_DIRECTORY,
+    timeoutMs: GEOSERVER_TIMEOUT_MS,
+  })
+  const output = result.stdout.trim()
+  let payload = null
+  try {
+    payload = output ? JSON.parse(output) : null
+  } catch {
+    payload = null
+  }
+
+  if (!result.ok || !payload?.ok) {
+    throw new Error(payload?.error || result.error || result.stderr.trim() || 'MassGIS GeoServer did not return a valid response.')
+  }
+
+  return payload.result
+}
+
+async function runGeoServerTool(name, args) {
+  switch (name) {
+    case 'massgis_search_layers': {
+      const query = requiredText(args.query, 'Search query', 120)
+      const limit = boundedInteger(args.limit, { fallback: 8, minimum: 1, maximum: 10, label: 'Search result limit' })
+      return runGeoServerCommand('search', ['--query', query, '--limit', String(limit)])
+    }
+    case 'massgis_describe_layer':
+      return runGeoServerCommand('describe', ['--layer-id', massgisLayerId(args.layer_id)])
+    case 'massgis_find_in_town': {
+      const municipality = requiredText(args.municipality, 'Municipality', 80).toUpperCase()
+      const maxFeatures = boundedInteger(args.max_features, { fallback: MAX_GEOSERVER_FEATURES, minimum: 1, maximum: MAX_GEOSERVER_FEATURES, label: 'Maximum features' })
+      return runGeoServerCommand('in_town', ['--layer-id', massgisLayerId(args.layer_id), '--municipality', municipality, '--max-features', String(maxFeatures)])
+    }
+    case 'massgis_find_nearby': {
+      const latitude = Number(args.latitude)
+      const longitude = Number(args.longitude)
+      const radius = Number(args.radius_meters ?? 1000)
+      if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) throw new Error('Latitude must be between -90 and 90.')
+      if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) throw new Error('Longitude must be between -180 and 180.')
+      if (!Number.isFinite(radius) || radius <= 0 || radius > 10_000) throw new Error('Radius must be greater than 0 and no more than 10,000 meters.')
+      const maxFeatures = boundedInteger(args.max_features, { fallback: 25, minimum: 1, maximum: MAX_GEOSERVER_FEATURES, label: 'Maximum features' })
+      return runGeoServerCommand('nearby', [
+        '--layer-id', massgisLayerId(args.layer_id),
+        '--latitude', String(latitude),
+        '--longitude', String(longitude),
+        '--radius-meters', String(radius),
+        '--max-features', String(maxFeatures),
+      ])
+    }
+    default:
+      throw new Error(`GeoServer tool is not allow-listed: ${name}`)
+  }
+}
+
 function getCase(caseId) {
-  return cases.find((caseItem) => caseItem.id === caseId)
+  return dynamicCases.get(caseId) || cases.find((caseItem) => caseItem.id === caseId)
 }
 
 function summarizeCase(caseItem) {
@@ -369,9 +672,13 @@ function summarizeCase(caseItem) {
     status: caseItem.status,
     recommendation: caseItem.recommendation,
     rationale: caseItem.rationale,
-    evidence: caseItem.evidence.map(({ source, date, detail }) => ({ source, date, detail })),
+    evidence: (caseItem.evidence ?? []).map(({ source, date, detail }) => ({ source, date, detail })),
     availableRecords: ['address-point', 'master-address', 'structure', 'structure-lookup', 'address-variant', 'parcel', 'road'],
     draftAllowed: caseItem.status === 'ready' && Boolean(caseItem.changes?.length),
+    publishEligible: caseItem.publishEligible !== false,
+    publishBlocker: caseItem.publishBlocker || null,
+    qaView: caseItem.qaEvidence?.viewId || caseItem.issueCode,
+    townExtract: caseItem.townExtractSummary ?? null,
   }
 }
 
@@ -474,8 +781,8 @@ function recordProposalAcceptance(caseItem, draft) {
   })
 }
 
-function agentTools() {
-  return [
+function agentTools(caseItem = null) {
+  const tools = [
     {
       type: 'function',
       function: {
@@ -497,6 +804,125 @@ function agentTools() {
         name: 'get_case',
         description: 'Read the current QA case summary, its issue, recommendation, evidence, and draft eligibility.',
         parameters: { type: 'object', properties: {}, additionalProperties: false },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_qa_issue_evidence',
+        description: 'Read the current category’s bounded record-level QA evidence, field aliases, and town-resolution result. Use this for a real QA-category investigation before proposing a correction.',
+        parameters: { type: 'object', properties: {}, additionalProperties: false },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_town_extract_summary',
+        description: 'Read which municipal extract was selected and how ADDRESS_TOWN_ID, GEOGRAPHIC_TOWN_ID, or COMMUNITY_ID resolved that town. This returns metadata, not the full geometries.',
+        parameters: { type: 'object', properties: {}, additionalProperties: false },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_qa_investigation_packet',
+        description: 'Read the selected QA case, record-level evidence, town resolution, publish eligibility, and approved MAD relationship context in one bounded packet. Use after loading MAD Schema Intelligence for an automatically started QA-category investigation.',
+        parameters: {
+          type: 'object',
+          properties: {
+            schema_subject: {
+              type: 'string',
+              enum: Object.keys(SCHEMA_CONTEXT_SUBJECTS),
+            },
+          },
+          required: ['schema_subject'],
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_mad_schema_context',
+        description: 'Read a small, relationship-aware excerpt from the approved MAD schema references. Use after loading MAD Schema Intelligence when a conclusion depends on joins or relationship direction.',
+        parameters: {
+          type: 'object',
+          properties: {
+            subject: {
+              type: 'string',
+              enum: Object.keys(SCHEMA_CONTEXT_SUBJECTS),
+            },
+          },
+          required: ['subject'],
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'massgis_search_layers',
+        description: 'Search the allow-listed public MassGIS GeoServer layer catalog. Use only for scoped external evidence after loading MassGIS GeoServer.',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'Plain-language layer search, for example open space.' },
+            limit: { type: 'integer', description: 'Optional result count from 1 through 10.' },
+          },
+          required: ['query'],
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'massgis_describe_layer',
+        description: 'Read exact field names and geometry metadata for one public MassGIS GeoServer layer before interpreting or filtering it.',
+        parameters: {
+          type: 'object',
+          properties: {
+            layer_id: { type: 'string', description: 'Fully qualified layer ID, for example massgis:GISDATA.OPENSPACE_POLY.' },
+          },
+          required: ['layer_id'],
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'massgis_find_in_town',
+        description: 'Retrieve a limited public MassGIS GeoServer layer subset intersecting one municipality. Use after describing the layer.',
+        parameters: {
+          type: 'object',
+          properties: {
+            layer_id: { type: 'string', description: 'Fully qualified MassGIS layer ID.' },
+            municipality: { type: 'string', description: 'Massachusetts municipality name, for example ROCKPORT.' },
+            max_features: { type: 'integer', description: 'Optional result cap from 1 through 100.' },
+          },
+          required: ['layer_id', 'municipality'],
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'massgis_find_nearby',
+        description: 'Find public MassGIS GeoServer features within a bounded radius of a supplied WGS84 coordinate. Use after describing the layer.',
+        parameters: {
+          type: 'object',
+          properties: {
+            layer_id: { type: 'string', description: 'Fully qualified MassGIS layer ID.' },
+            latitude: { type: 'number', description: 'WGS84 latitude.' },
+            longitude: { type: 'number', description: 'WGS84 longitude.' },
+            radius_meters: { type: 'number', description: 'Optional search radius up to 10,000 meters.' },
+            max_features: { type: 'integer', description: 'Optional result cap from 1 through 100.' },
+          },
+          required: ['layer_id', 'latitude', 'longitude'],
+          additionalProperties: false,
+        },
       },
     },
     {
@@ -569,15 +995,96 @@ function agentTools() {
       },
     },
   ]
+  if (!caseItem?.qaEvidence) return tools
+
+  const qaToolNames = new Set([
+    'load_skill',
+    'get_case',
+    'get_qa_issue_evidence',
+    'get_town_extract_summary',
+    'get_qa_investigation_packet',
+    'get_mad_schema_context',
+    'get_proposal_lineage',
+    'stage_fixture_draft',
+    'validate_draft',
+  ])
+  return tools.filter((tool) => qaToolNames.has(tool.function.name))
 }
 
-function executeTool(call, caseItem, model) {
+async function executeTool(call, caseItem, model, session) {
   const args = call.function.arguments ? JSON.parse(call.function.arguments) : {}
   switch (call.function.name) {
-    case 'load_skill':
-      return loadSkill(args.skill_id)
+    case 'load_skill': {
+      const skill = loadSkill(args.skill_id)
+      session.loadedSkills.add(skill.id)
+      return skill
+    }
+    case 'get_mad_schema_context':
+      if (!session.loadedSkills.has('mad-schema-intelligence')) {
+        throw new Error('Load the MAD Schema Intelligence skill before requesting schema context.')
+      }
+      return readMadSchemaContext(args.subject)
+    case 'massgis_search_layers':
+      if (!session.loadedSkills.has('massgis-geoserver')) {
+        throw new Error('Load the MassGIS GeoServer skill before using public GeoServer evidence tools.')
+      }
+      return runGeoServerTool(call.function.name, args)
+    case 'massgis_describe_layer': {
+      if (!session.loadedSkills.has('massgis-geoserver')) {
+        throw new Error('Load the MassGIS GeoServer skill before using public GeoServer evidence tools.')
+      }
+      const result = await runGeoServerTool(call.function.name, args)
+      session.describedLayers.add(result.layer_id)
+      return result
+    }
+    case 'massgis_find_in_town':
+    case 'massgis_find_nearby': {
+      if (!session.loadedSkills.has('massgis-geoserver')) {
+        throw new Error('Load the MassGIS GeoServer skill before using public GeoServer evidence tools.')
+      }
+      const layerId = massgisLayerId(args.layer_id)
+      if (!session.describedLayers.has(layerId)) {
+        throw new Error(`Describe ${layerId} before requesting public GeoServer features from it.`)
+      }
+      return runGeoServerTool(call.function.name, args)
+    }
     case 'get_case':
       return summarizeCase(caseItem)
+    case 'get_qa_issue_evidence':
+      return {
+        ...(caseItem.qaEvidence ?? {
+          viewId: caseItem.issueCode,
+          limitation: 'This training case does not have a production QA-view evidence packet.',
+        }),
+        publishEligibility: {
+          eligible: caseItem.publishEligible !== false,
+          blocker: caseItem.publishBlocker || null,
+        },
+      }
+    case 'get_town_extract_summary':
+      return caseItem.townExtractSummary ?? {
+        selected: false,
+        limitation: 'No town could be selected without record-level issue rows.',
+      }
+    case 'get_qa_investigation_packet':
+      if (!session.loadedSkills.has('mad-schema-intelligence')) {
+        throw new Error('Load the MAD Schema Intelligence skill before requesting the combined investigation packet.')
+      }
+      return {
+        case: summarizeCase(caseItem),
+        evidence: {
+          ...(caseItem.qaEvidence ?? {}),
+          publishEligibility: {
+            eligible: caseItem.publishEligible !== false,
+            blocker: caseItem.publishBlocker || null,
+          },
+        },
+        town: caseItem.townExtractSummary ?? {
+          selected: false,
+          limitation: 'No town could be selected without record-level issue rows.',
+        },
+        schema: readMadSchemaContext(args.schema_subject),
+      }
     case 'get_proposal_lineage':
       return { proposals: getProposalLineage(caseItem.id) }
     case 'get_feature':
@@ -628,6 +1135,16 @@ function executeTool(call, caseItem, model) {
 function toolSummary(name, result) {
   if (result?.error) return `${name} could not complete`
   if (name === 'load_skill') return `Loaded skill: ${result.name}`
+  if (name === 'get_qa_issue_evidence') return `Read record-level QA evidence for ${result.viewId}`
+  if (name === 'get_town_extract_summary') {
+    return result.selected === false ? 'No town extract was available' : `Selected ${result.town} town extract`
+  }
+  if (name === 'get_qa_investigation_packet') return `Read combined QA evidence and ${result.town.town || 'no'} town context`
+  if (name === 'get_mad_schema_context') return `Read MAD schema context: ${result.subject}`
+  if (name === 'massgis_search_layers') return `Searched MassGIS layers for ${result.query}`
+  if (name === 'massgis_describe_layer') return `Read MassGIS layer schema: ${result.layer_id}`
+  if (name === 'massgis_find_in_town') return `Read ${result.feature_count} MassGIS features in ${result.municipality}`
+  if (name === 'massgis_find_nearby') return `Read ${result.feature_count} nearby MassGIS features`
   if (name === 'get_case') return 'Read case snapshot'
   if (name === 'get_proposal_lineage') return 'Read proposal lineage'
   if (name === 'get_feature') return `Read ${result.label} ${result.id}`
@@ -647,10 +1164,15 @@ function agentInstructions(caseItem) {
     `The active case ID is ${caseItem.id}. Do not discuss other cases or invent data.`,
     'Use the case tools before making factual claims. Keep answers concise and cite the data source by name when available.',
     'You may stage only the controlled training draft using stage_fixture_draft. It never edits MAD, never publishes, and always requires human review.',
+    'For a selected statewide QA category, you must read get_qa_investigation_packet, or both get_qa_issue_evidence and get_town_extract_summary, before returning a final answer. Explain the statewide count separately from the issue records reproduced in the local town extract.',
+    'Resolve the town only from the supplied field evidence and MAD_MSAG_COMMUNITY_POLYM lookup. Depending on the source layer, the evidence may use COMMUNITY_ID, ADDRESS_TOWN_ID, or GEOGRAPHIC_TOWN_ID.',
     'When staging a draft, provide a concise human-readable summary and category in the tool call; they become the proposal registry entry.',
     'If case status is evidence, withhold any edit draft and explain what evidence is missing.',
     `On-demand skill index (full instructions are not preloaded): ${skillIndex}`,
     'Load a skill only when the user explicitly names it or the request clearly matches one of its triggers. After loading it, follow its instructions; otherwise do not load a skill.',
+    'MassGIS GeoServer tools are read-only external evidence. Use them only for a request that calls for public MassGIS evidence, describe a layer before interpreting it, and do not make an edit recommendation from GeoServer evidence alone.',
+    'MAD Schema context is read-only metadata. Use it to confirm relationship paths rather than inventing a join.',
+    'A controlled proposal may be reviewable but not publishable when an export omitted a stable target identifier. If the record evidence confirms the logical fix, stage and validate that review-only draft; the missing identifier blocks acceptance, not staging. State the publish blocker exactly and never imply acceptance is available.',
     'Never claim an edit was applied, accepted, or published. Say “staged for review” only after the tool confirms it.',
   ].join(' ')
 }
@@ -670,7 +1192,233 @@ async function callLmStudio({ baseUrl, model, messages, tools }) {
   return message
 }
 
-export async function runCaseAgent({ caseItem, prompt, baseUrl, model }) {
+function textFragments(value) {
+  if (typeof value === 'string') return value
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return textFragments(value.text ?? value.content ?? value.value)
+  }
+  if (!Array.isArray(value)) return ''
+  return value.map((part) => {
+    if (typeof part === 'string') return part
+    if (!part || typeof part !== 'object') return ''
+    return textFragments(part.text ?? part.content ?? part.value)
+  }).join('')
+}
+
+export function normalizeLmStudioDelta(delta = {}) {
+  const contentParts = Array.isArray(delta.content) ? delta.content : null
+  const content = contentParts
+    ? contentParts
+      .filter((part) => !['thinking', 'reasoning', 'analysis'].includes(part?.type))
+      .map((part) => textFragments(part?.text ?? part?.content ?? part?.value))
+      .join('')
+    : textFragments(delta.content)
+  const partReasoning = contentParts
+    ? contentParts
+      .filter((part) => ['thinking', 'reasoning', 'analysis'].includes(part?.type))
+      .map((part) => textFragments(part?.text ?? part?.content ?? part?.value))
+      .join('')
+    : ''
+  const reasoning = [
+    delta.reasoning_content,
+    delta.reasoning,
+    delta.thinking,
+    delta.analysis,
+    partReasoning,
+  ].map(textFragments).find(Boolean) || ''
+
+  return { content, reasoning }
+}
+
+function partialMarkerLength(text, markers) {
+  const lower = text.toLowerCase()
+  let longest = 0
+  for (const marker of markers) {
+    const markerLower = marker.toLowerCase()
+    const maxLength = Math.min(lower.length, markerLower.length - 1)
+    for (let length = 1; length <= maxLength; length += 1) {
+      if (lower.endsWith(markerLower.slice(0, length))) longest = Math.max(longest, length)
+    }
+  }
+  return longest
+}
+
+export function createThinkingTagDecoder() {
+  const openMarkers = ['<think>', '<analysis>', '<reasoning>']
+  const closeMarkers = ['</think>', '</analysis>', '</reasoning>']
+  let buffer = ''
+  let thinking = false
+
+  const consume = (flush = false) => {
+    const output = []
+    const allMarkers = [...openMarkers, ...closeMarkers]
+
+    while (buffer) {
+      const lower = buffer.toLowerCase()
+      const matches = allMarkers
+        .map((marker) => ({ marker, index: lower.indexOf(marker) }))
+        .filter((match) => match.index >= 0)
+        .sort((left, right) => left.index - right.index)
+      const next = matches[0]
+
+      if (!next) {
+        const keep = flush ? 0 : partialMarkerLength(buffer, allMarkers)
+        const ready = keep ? buffer.slice(0, -keep) : buffer
+        if (ready) output.push({ type: thinking ? 'reasoning' : 'content', text: ready })
+        buffer = keep ? buffer.slice(-keep) : ''
+        break
+      }
+
+      const before = buffer.slice(0, next.index)
+      if (before) output.push({ type: thinking ? 'reasoning' : 'content', text: before })
+      thinking = openMarkers.includes(next.marker)
+      buffer = buffer.slice(next.index + next.marker.length)
+    }
+
+    return output
+  }
+
+  return {
+    push(chunk) {
+      buffer += chunk
+      return consume(false)
+    },
+    flush() {
+      return consume(true)
+    },
+  }
+}
+
+function appendToolCallDelta(toolCalls, fragment, fallbackIndex = 0) {
+  if (!fragment) return
+  const index = Number.isInteger(fragment.index) ? fragment.index : fallbackIndex
+  const existing = toolCalls.get(index) || {
+    id: '',
+    type: 'function',
+    function: { name: '', arguments: '' },
+  }
+  if (fragment.id && fragment.id !== existing.id) existing.id += fragment.id
+  if (fragment.type) existing.type = fragment.type
+  if (fragment.function?.name) existing.function.name += fragment.function.name
+  if (fragment.function?.arguments) {
+    existing.function.arguments += typeof fragment.function.arguments === 'string'
+      ? fragment.function.arguments
+      : JSON.stringify(fragment.function.arguments)
+  }
+  toolCalls.set(index, existing)
+}
+
+async function callLmStudioStreaming({ baseUrl, model, messages, tools, onEvent, turn, signal }) {
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
+    body: JSON.stringify({ model, messages, tools, tool_choice: 'auto', temperature: 0, stream: true }),
+    signal,
+  })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null)
+    throw new Error(payload?.error?.message || payload?.message || `LM Studio returned ${response.status}.`)
+  }
+
+  const contentType = response.headers.get('content-type') || ''
+  if (!response.body || !contentType.includes('text/event-stream')) {
+    const payload = await response.json().catch(() => null)
+    const message = payload?.choices?.[0]?.message
+    if (!message) throw new Error('LM Studio returned no assistant message.')
+    const normalized = normalizeLmStudioDelta(message)
+    if (normalized.reasoning) onEvent?.({ id: `reasoning-${turn}`, type: 'reasoning_delta', turn, text: normalized.reasoning })
+    if (normalized.content) onEvent?.({ id: `output-${turn}`, type: 'output_delta', turn, text: normalized.content })
+    return message
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  const tagDecoder = createThinkingTagDecoder()
+  const toolCalls = new Map()
+  let buffer = ''
+  let content = ''
+  let reasoning = ''
+
+  const emitText = (type, text) => {
+    if (!text) return
+    if (type === 'reasoning') {
+      reasoning += text
+      onEvent?.({ id: `reasoning-${turn}`, type: 'reasoning_delta', turn, text })
+    } else {
+      content += text
+      onEvent?.({ id: `output-${turn}`, type: 'output_delta', turn, text })
+    }
+  }
+
+  const processEventBlock = (block) => {
+    const data = block
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trimStart())
+      .join('\n')
+      .trim()
+    if (!data || data === '[DONE]') return
+
+    const payload = JSON.parse(data)
+    if (payload.error) throw new Error(payload.error.message || payload.error)
+    const choice = payload.choices?.[0]
+    const delta = choice?.delta ?? choice?.message
+    if (!delta) return
+
+    const normalized = normalizeLmStudioDelta(delta)
+    if (normalized.reasoning) emitText('reasoning', normalized.reasoning)
+    if (normalized.content) {
+      for (const part of tagDecoder.push(normalized.content)) emitText(part.type, part.text)
+    }
+
+    const fragments = delta.tool_calls ?? (delta.function_call ? [{
+      index: 0,
+      id: delta.id,
+      type: 'function',
+      function: delta.function_call,
+    }] : [])
+    fragments.forEach((fragment, index) => appendToolCallDelta(toolCalls, fragment, index))
+  }
+
+  while (true) {
+    const { value, done } = await reader.read()
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
+    const blocks = buffer.split(/\r?\n\r?\n/)
+    buffer = blocks.pop() || ''
+    blocks.forEach(processEventBlock)
+    if (done) break
+  }
+  if (buffer.trim()) processEventBlock(buffer)
+  tagDecoder.flush().forEach((part) => emitText(part.type, part.text))
+
+  return {
+    role: 'assistant',
+    content,
+    ...(reasoning ? { reasoning_content: reasoning } : {}),
+    tool_calls: [...toolCalls.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([index, call]) => ({
+        ...call,
+        id: call.id || `tool-call-${turn}-${index}`,
+      })),
+  }
+}
+
+function toolCallDetail(call) {
+  try {
+    const args = JSON.parse(call.function.arguments || '{}')
+    if (call.function.name === 'load_skill') return args.skill_id || args.skillId || 'Requested skill'
+    const values = Object.values(args)
+      .filter((value) => ['string', 'number', 'boolean'].includes(typeof value))
+      .map(String)
+      .filter(Boolean)
+    return compactText(values.join(' · '), 180) || 'Case-scoped request'
+  } catch {
+    return 'Case-scoped request'
+  }
+}
+
+export async function runCaseAgent({ caseItem, prompt, baseUrl, model, onEvent, signal }) {
   const feedback = getReviewerFeedback(caseItem.id)
   const messages = [
     { role: 'system', content: agentInstructions(caseItem) },
@@ -681,15 +1429,41 @@ export async function runCaseAgent({ caseItem, prompt, baseUrl, model }) {
     { role: 'user', content: prompt },
   ]
   const toolEvents = []
-  const tools = agentTools()
+  const tools = agentTools(caseItem)
+  const session = { loadedSkills: new Set(), describedLayers: new Set() }
 
   for (let turn = 0; turn < MAX_AGENT_TURNS; turn += 1) {
-    const message = await callLmStudio({ baseUrl, model, messages, tools })
+    if (signal?.aborted) throw new DOMException('The agent stream was cancelled.', 'AbortError')
+    const displayTurn = turn + 1
+    onEvent?.({
+      id: `model-${displayTurn}`,
+      type: 'model',
+      phase: 'started',
+      turn: displayTurn,
+      model,
+      title: `Model turn ${displayTurn}`,
+      detail: 'Reading the case and deciding which evidence or operation is needed.',
+    })
+    const message = onEvent
+      ? await callLmStudioStreaming({ baseUrl, model, messages, tools, onEvent, turn: displayTurn, signal })
+      : await callLmStudio({ baseUrl, model, messages, tools })
     const toolCalls = message.tool_calls ?? []
     messages.push({
       role: 'assistant',
       content: message.content ?? '',
+      ...(message.reasoning_content ? { reasoning_content: message.reasoning_content } : {}),
       tool_calls: toolCalls,
+    })
+    onEvent?.({
+      id: `model-${displayTurn}`,
+      type: 'model',
+      phase: 'completed',
+      turn: displayTurn,
+      model,
+      title: `Model turn ${displayTurn}`,
+      detail: toolCalls.length
+        ? `Requested ${toolCalls.length} controlled ${toolCalls.length === 1 ? 'call' : 'calls'}.`
+        : 'Returned the investigation summary.',
     })
 
     if (!toolCalls.length) {
@@ -703,17 +1477,37 @@ export async function runCaseAgent({ caseItem, prompt, baseUrl, model }) {
 
     for (const call of toolCalls) {
       let result
+      const eventType = call.function.name === 'load_skill' ? 'skill' : 'tool'
+      onEvent?.({
+        id: call.id,
+        type: eventType,
+        phase: 'started',
+        turn: displayTurn,
+        name: call.function.name,
+        title: eventType === 'skill' ? 'Loading skill on demand' : call.function.name,
+        detail: toolCallDetail(call),
+      })
       try {
-        result = executeTool(call, caseItem, model)
+        result = await executeTool(call, caseItem, model, session)
       } catch (error) {
         result = { error: error.message }
       }
-      toolEvents.push({ name: call.function.name, summary: toolSummary(call.function.name, result) })
+      const summary = toolSummary(call.function.name, result)
+      toolEvents.push({ name: call.function.name, summary })
+      onEvent?.({
+        id: call.id,
+        type: eventType,
+        phase: result?.error ? 'error' : 'completed',
+        turn: displayTurn,
+        name: call.function.name,
+        title: eventType === 'skill' ? 'Skill loaded on demand' : call.function.name,
+        detail: summary,
+      })
       messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) })
     }
   }
 
-  throw new Error('The local agent exceeded its five-tool-turn limit.')
+  throw new Error(`The local agent exceeded its ${MAX_AGENT_TURNS}-tool-turn limit.`)
 }
 
 function sendJson(response, status, payload) {
@@ -753,6 +1547,95 @@ async function health(baseUrl, model) {
   return { provider: 'LM Studio', baseUrl, model, available: response.ok && models.includes(model), models }
 }
 
+function qaInvestigationPrompt(prepared) {
+  const skillDirection = prepared.issue.id.startsWith('MADV_QA_AP_')
+    ? 'Load MAD QA AP and MAD Schema Intelligence because this is an address-point QA view.'
+    : 'Load MAD Schema Intelligence because the conclusion depends on MAD table relationships.'
+  return [
+    `The reviewer selected statewide QA category ${prepared.issue.id}: ${prepared.issue.description}.`,
+    `The daily report count is ${prepared.issue.count.toLocaleString()}.`,
+    skillDirection,
+    'After loading the named skill, call get_qa_investigation_packet with the relationship subject that fits this view. It returns the case, record evidence, approved relationship context, and town selection together.',
+    'If the local evidence confirms the controlled logical correction, stage it for human review and validate it.',
+    'A missing stable target identifier blocks publishing, not a review-only draft. Stage the controlled review proposal when the fix is otherwise confirmed, then say exactly why its Accept action is disabled.',
+    'If record-level rows themselves are missing, withhold the draft and say what production connection is required.',
+    'Do not use public GeoServer evidence for this investigation and do not claim that MAD was edited.',
+  ].join(' ')
+}
+
+async function investigateQaCategory({ viewId, baseUrl, model, onEvent, signal }) {
+  onEvent?.({
+    id: 'qa-evidence',
+    type: 'status',
+    phase: 'started',
+    title: 'Read QA evidence',
+    detail: viewId,
+  })
+  const prepared = await prepareQaInvestigation(viewId)
+  onEvent?.({
+    id: 'qa-evidence',
+    type: 'status',
+    phase: 'completed',
+    title: 'QA evidence ready',
+    detail: `${prepared.issue.count.toLocaleString()} statewide results · ${prepared.adapterResult.cases?.length ?? 0} local test ${prepared.adapterResult.cases?.length === 1 ? 'case' : 'cases'}`,
+  })
+  onEvent?.({
+    id: 'town-resolution',
+    type: 'status',
+    phase: prepared.caseItem.townExtractSummary ? 'completed' : 'error',
+    title: prepared.caseItem.townExtractSummary ? 'Issue town resolved' : 'No town extract resolved',
+    detail: prepared.caseItem.townExtractSummary
+      ? `${prepared.caseItem.townExtractSummary.town} · ADDRESS_TOWN_ID ${prepared.caseItem.townExtractSummary.townId}`
+      : 'Record-level production QA access is required before a town can be selected.',
+  })
+
+  const result = await runCaseAgent({
+    caseItem: prepared.caseItem,
+    prompt: qaInvestigationPrompt(prepared),
+    baseUrl,
+    model,
+    onEvent,
+    signal,
+  })
+  const payload = {
+    issue: prepared.issue,
+    localResultCount: prepared.adapterResult.cases?.length ?? 0,
+    caseItem: prepared.caseItem,
+    townExtractUrl: prepared.caseItem.townExtractSummary
+      ? `/api/towns/${prepared.caseItem.townExtractSummary.townId}/extract`
+      : null,
+    provider: 'LM Studio',
+    model,
+    ...result,
+    proposals: getProposalLineage(prepared.caseItem.id),
+  }
+  onEvent?.({
+    id: 'agent-result',
+    type: 'status',
+    phase: 'completed',
+    title: payload.draft?.changes?.length ? 'Proposal staged for review' : 'Investigation complete',
+    detail: payload.draft?.changes?.length
+      ? `${payload.draft.changes.length} controlled ${payload.draft.changes.length === 1 ? 'change' : 'changes'} prepared`
+      : 'No controlled change was staged.',
+  })
+  return payload
+}
+
+function startEventStream(response) {
+  response.writeHead(200, {
+    'content-type': 'text/event-stream; charset=utf-8',
+    'cache-control': 'no-cache, no-transform',
+    connection: 'keep-alive',
+    'x-accel-buffering': 'no',
+  })
+  response.flushHeaders?.()
+}
+
+function sendEventStream(response, event, payload) {
+  if (response.destroyed || response.writableEnded) return
+  response.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`)
+}
+
 export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAULT_LM_STUDIO_URL, model = process.env.LM_STUDIO_MODEL || DEFAULT_MODEL } = {}) {
   return createServer(async (request, response) => {
     const url = new URL(request.url, `http://${request.headers.host || '127.0.0.1'}`)
@@ -765,6 +1648,89 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
 
       if (request.method === 'GET' && url.pathname === '/api/skills') {
         return sendJson(response, 200, { skills: getSkillIndex() })
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/qa/issues') {
+        return sendJson(response, 200, loadQaCatalog())
+      }
+
+      if (
+        request.method === 'POST'
+        && pathParts[0] === 'api'
+        && pathParts[1] === 'qa'
+        && pathParts[2] === 'issues'
+        && pathParts[3]
+        && pathParts[4] === 'investigate-stream'
+      ) {
+        startEventStream(response)
+        const abortController = new AbortController()
+        response.on('close', () => abortController.abort())
+        const heartbeat = setInterval(() => {
+          if (!response.destroyed && !response.writableEnded) response.write(': keep-alive\n\n')
+        }, 15_000)
+        try {
+          sendEventStream(response, 'activity', {
+            id: 'session',
+            type: 'status',
+            phase: 'started',
+            title: 'Local agent connected',
+            detail: model,
+            model,
+          })
+          const result = await investigateQaCategory({
+            viewId: pathParts[3],
+            baseUrl,
+            model,
+            onEvent: (event) => sendEventStream(response, 'activity', event),
+            signal: abortController.signal,
+          })
+          sendEventStream(response, 'complete', result)
+        } catch (error) {
+          if (error.name !== 'AbortError') {
+            sendEventStream(response, 'error', {
+              message: error.message || 'Local agent request failed.',
+            })
+          }
+        } finally {
+          clearInterval(heartbeat)
+          if (!response.writableEnded) response.end()
+        }
+        return undefined
+      }
+
+      if (
+        request.method === 'POST'
+        && pathParts[0] === 'api'
+        && pathParts[1] === 'qa'
+        && pathParts[2] === 'issues'
+        && pathParts[3]
+        && pathParts[4] === 'investigate'
+      ) {
+        return sendJson(response, 200, await investigateQaCategory({
+          viewId: pathParts[3],
+          baseUrl,
+          model,
+        }))
+      }
+
+      if (
+        request.method === 'GET'
+        && pathParts[0] === 'api'
+        && pathParts[1] === 'towns'
+        && pathParts[2]
+        && pathParts[3] === 'extract'
+      ) {
+        return sendJson(response, 200, await getTownExtract(pathParts[2]))
+      }
+
+      if (
+        request.method === 'GET'
+        && pathParts[0] === 'api'
+        && pathParts[1] === 'towns'
+        && pathParts[2]
+        && pathParts[3] === 'records'
+      ) {
+        return sendJson(response, 200, await getTownRecordBundle(pathParts[2], url.searchParams.get('key')))
       }
 
       if (pathParts[0] === 'api' && pathParts[1] === 'cases' && pathParts[2]) {
@@ -812,6 +1778,11 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
         }
 
         if (request.method === 'POST' && pathParts[3] === 'accept') {
+          if (caseItem.publishEligible === false) {
+            return sendJson(response, 409, {
+              error: caseItem.publishBlocker || 'This proposal is review-only and cannot be published.',
+            })
+          }
           const feedback = getReviewerFeedback(caseItem.id)
           if (feedback?.status === 'active') {
             return sendJson(response, 409, {

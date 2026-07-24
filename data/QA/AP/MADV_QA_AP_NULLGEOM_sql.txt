@@ -1,0 +1,15 @@
+# This view shows any address point records that are associated with NULL geometry.
+# The records are candidates for deletion after other records in related datasets have
+# been pre-processed.  (address point centroids, master address, address variants, and possibly stucture lut)
+# 7/8/14 - DM
+# Replaced SQL with an alternative that functions in AWS. (ST_X and ST_Y stopped working with multipoint geometry as inputs. 5/14/21)
+
+create or replace view MADV_QA_AP_NULLGEOM as
+select * from mad_address_pointm
+where sde.st_isempty(shape) = 1;
+
+############################
+# Original code below
+create or replace view MADV_QA_AP_NULLGEOM as
+select * from mad_address_pointm
+where sde.st_x(shape) IS NULL OR sde.st_Y(shape) IS NULL;

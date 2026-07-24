@@ -1,0 +1,32 @@
+# View identifies any records in MAD_MASTER_STREET_NAME that are duplicates 
+# based on the parsed street name fields.  Duplicate street name records need 
+# to either be collapsed, have their parsed fields correct if wrong, or if one 
+# record has an incorrect street name, it needs to be edited to reflect the correct,
+# non-duplicated street name.
+# DM - 10/3/16
+
+CREATE OR REPLACE VIEW MADV_QA_MSN_DUPE_PARSED AS
+SELECT A.STREET_NAME, A.STREET_NAME_ID, B.STREET_NAME DUPE_STREETNAME, B.STREET_NAME_ID DUPE_STREETNAME_ID,
+A.PRE_MOD, A.PRE_DIR, A.PRE_TYPE, A.STR_NAME_BASE, A.POST_TYPE, A.POST_DIR, A.POST_MOD
+FROM MAD_MASTER_STREET_NAME A, MAD_MASTER_STREET_NAME B
+WHERE A.COMMUNITY_ID = B.COMMUNITY_ID
+AND TRIM( REGEXP_REPLACE
+		(A.PRE_MOD || ' ' || 
+		 A.PRE_DIR || ' ' || 
+		 A.PRE_TYPE|| ' ' ||
+		 A.STR_NAME_BASE || ' ' ||
+		 A.POST_TYPE|| ' ' ||
+		 A.POST_DIR|| ' ' ||
+		 A.POST_MOD, ' +', ' ')) = 
+	  TRIM (REGEXP_REPLACE
+		(B.PRE_MOD || ' ' || 
+		 B.PRE_DIR || ' ' || 
+		 B.PRE_TYPE|| ' ' ||
+		 B.STR_NAME_BASE || ' ' ||
+		 B.POST_TYPE|| ' ' ||
+		 B.POST_DIR|| ' ' ||
+		 B.POST_MOD, ' +', ' '))
+AND A.STREET_NAME_ID <> B.STREET_NAME_ID
+AND A.NEIGHBORHOOD IS NULL
+AND B.NEIGHBORHOOD IS NULL
+ORDER BY A.STREET_NAME;

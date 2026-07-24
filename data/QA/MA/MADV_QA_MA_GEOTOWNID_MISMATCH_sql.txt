@@ -1,0 +1,23 @@
+# This view identifies any address records in MAD_MASTER_ADDRESS that have a GEOGRAPHIC_TOWN_ID
+# that is different than the GEOGRAPHIC_TOWN_ID found in any associated address points in
+# MAD_ADDRESS_POINTM and/or any associated centroids in MAD_ADDRESS_POINTM_CENTROID.
+# The GEOGRAPHIC_TOWN_ID must be edited in either the identified address record(s) or the
+# associated point(s), with the address point's geographic location relative to the town
+# boundary layer as the definitive guide.  In the unlikely circumstance that an address point's
+# centroid geographically exists outside the town boundary of the parent multipoint, assign the 
+# parent multipoint's GEOGRAPHIC_TOWN_ID to the centroid.
+# 10/27/16 - DM
+
+CREATE OR REPLACE VIEW MADV_QA_MA_GEOTOWNID_MISMATCH AS
+SELECT MA.OBJECTID, MA.MASTER_ADDRESS_ID, MA.ADDRESS_POINT_ID, MA.GEOGRAPHIC_TOWN_ID AS MA_GEOTOWN_ID, AP.GEOGRAPHIC_TOWN_ID AS AP_GEOTOWN_ID,
+APC.GEOGRAPHIC_TOWN_ID AS APC_GEOTOWN_ID
+FROM MAD_MASTER_ADDRESS MA, MAD_ADDRESS_POINTM AP, MAD_ADDRESS_POINTM_CENTROID APC
+WHERE MA.ADDRESS_POINT_ID = AP.ADDRESS_POINT_ID
+AND AP.ADDRESS_POINT_ID = APC.CENTROID_ID
+AND (
+      (MA.GEOGRAPHIC_TOWN_ID <> AP.GEOGRAPHIC_TOWN_ID
+      OR MA.GEOGRAPHIC_TOWN_ID IS NULL AND AP.GEOGRAPHIC_TOWN_ID IS NOT NULL
+      OR MA.GEOGRAPHIC_TOWN_ID IS NOT NULL AND AP.GEOGRAPHIC_TOWN_ID IS NULL)
+    OR (MA.GEOGRAPHIC_TOWN_ID <> APC.GEOGRAPHIC_TOWN_ID
+      OR MA.GEOGRAPHIC_TOWN_ID IS NULL AND APC.GEOGRAPHIC_TOWN_ID IS NOT NULL
+      OR MA.GEOGRAPHIC_TOWN_ID IS NOT NULL AND APC.GEOGRAPHIC_TOWN_ID IS NULL));

@@ -1,0 +1,38 @@
+# View identifies any records in the most recent MSAG deliverable table where the ESN/MSAG community
+# combination isn't represented in MAD_EMERGENCY_SERVICE_ZONES.
+# Note:  This QA check requires that the view be generated on-the-fly in the python script to account
+# for the fact that the MSAG table is updated and replaced on a periodic basis, and the replacement
+# incorporates the date of the vintage in its table name. (therefore not a static source name)
+# DM - 10/11/16
+# 2/6/17 - This QA check was inactivated.
+
+esz_msag_not_esz_qry = '''CREATE OR REPLACE VIEW %s AS
+                                  SELECT DISTINCT SUBSTR(M.ESN, 3, 3) || ' '||  MC.COMMUNITY_NAME AS ESN_COMM_NOT_IN_ESZ 
+                                  FROM %s M, MAD_MSAG_COMMUNITY_POLYM MC
+                                  WHERE M.COMMUNITY_ID = MC.COMMUNITY_ID
+                                  AND SUBSTR(M.ESN, 3, 3) NOT IN (138, 149, 178, 179, 303, 320, 333, 512, 387, 509 ) -- DISSOLVED MSAG COMMS IN MAD
+                                  AND SUBSTR(M.ESN, 3, 3) NOT IN (267, 445, 471, 531, 541, 551, 899) -- MSAG AND MAD ESZs ARE OUT OF SYNCH BECAUSE WE MAPPED WHAT THE ESZs SHOULD BE AND THE MSAG HAS NOT YET BEEN UPDATED.
+                                  AND (SUBSTR(M.ESN, 3, 3) NOT IN '363' AND COMMUNITY NOT IN ('HOLDEN')) -- #51 AND #55 BOND ROAD WITH A COMMUNITY OF HOLDEN HAVE A 363 RUTLAND RESPONSE
+                                  AND SUBSTR(M.ESN, 3, 3) NOT IN (481, 482, 479 ) -- ESNS NO LONGER USED IN BOSTON
+                                  AND SUBSTR(M.ESN, 3, 3) != 609 -- MBTA
+                                  AND SUBSTR(M.ESN, 3, 3) NOT LIKE '9%%' -- 900 SERIES ARE TEST RECORDS
+                                  MINUS
+                                  SELECT ESN || ' '|| MSAG_COMM
+                                  FROM MAD_EMERGENCY_SERVICE_ZONES''' % (esz_msag_not_esz_v, msag_max_tbl)
+
+
+(native SQL not embedded in Python...)
+
+CREATE OR REPLACE VIEW MADV_QA_ESZ_MSAG_NOT_ESZ AS
+SELECT DISTINCT SUBSTR(M.ESN, 3, 3) || ' '||  MC.COMMUNITY_NAME AS ESN_COMM_NOT_IN_ESZ 
+FROM SETB.MSAG_20160623 M, MAD_MSAG_COMMUNITY_POLYM MC
+WHERE M.COMMUNITY_ID = MC.COMMUNITY_ID
+AND SUBSTR(M.ESN, 3, 3) NOT IN (138, 149, 178, 179, 303, 320, 333, 512, 387, 509 ) -- DISSOLVED MSAG COMMS IN MAD
+AND SUBSTR(M.ESN, 3, 3) NOT IN (267, 445, 471, 531, 541, 551, 899) -- MSAG AND MAD ESZs ARE OUT OF SYNCH BECAUSE WE MAPPED WHAT THE ESZs SHOULD BE AND THE MSAG HAS NOT YET BEEN UPDATED.
+AND (SUBSTR(M.ESN, 3, 3) NOT IN '363' AND COMMUNITY NOT IN ('HOLDEN')) -- #51 AND #55 BOND ROAD WITH A COMMUNITY OF HOLDEN HAVE A 363 RUTLAND RESPONSE
+AND SUBSTR(M.ESN, 3, 3) NOT IN (481, 482, 479 ) -- ESNS NO LONGER USED IN BOSTON
+AND SUBSTR(M.ESN, 3, 3) != 609 -- MBTA
+AND SUBSTR(M.ESN, 3, 3) NOT LIKE '9%' -- 900 SERIES ARE TEST RECORDS
+MINUS
+SELECT ESN || ' '|| MSAG_COMM
+FROM MAD_EMERGENCY_SERVICE_ZONES;

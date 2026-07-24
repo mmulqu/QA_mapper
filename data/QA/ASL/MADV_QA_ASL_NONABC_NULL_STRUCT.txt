@@ -1,0 +1,15 @@
+# A view that identifies any records in MAD_ADDPT_STRUCT_LUT where STRUCTURE_ID is NULL
+# but the ADDRESS_POINT_ID references a non-ABC point.  These records should represent placeholder
+# lookup table records where a structure polygon needs to be generated, but can also conceivably
+# represent bogus records that need to be deleted.
+# DM - 11/1/17
+
+CREATE OR REPLACE VIEW MADV_QA_ASL_NONABC_NULL_STRUCT AS
+SELECT * FROM MAD_ADDPT_STRUCT_LUT LUT
+WHERE STRUCTURE_ID IS NULL
+AND NOT EXISTS (SELECT * FROM MAD_ADDRESS_POINTM AP
+WHERE LUT.ADDRESS_POINT_ID = AP.ADDRESS_POINT_ID
+AND AP.POINT_TYPE = 'ABC')
+ORDER BY STRUCTURE_TOWN_ID, ADDRESS_POINT_ID;
+
+

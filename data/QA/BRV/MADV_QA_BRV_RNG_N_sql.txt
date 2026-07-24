@@ -1,0 +1,14 @@
+# View identifies any records in MAD_BASE_RANGE_VARIANTS where ADDRESS_RANGE_TYPE = 'N'
+# but non-null values are found in the address range fields. "N" is supposed to indicate
+# that there are no address ranges associated with that street segment.
+# DM - 9/13/16
+
+CREATE OR REPLACE VIEW MADV_QA_BRV_RNG_N AS
+SELECT OBJECTID, BASE_SEGMENT_ID, BASE_RANGE_VARIANT_ID, ADDRESS_RANGE_TYPE,
+FROM_ADDRESS_LEFT, TO_ADDRESS_LEFT, FROM_ADDRESS_RIGHT, TO_ADDRESS_RIGHT
+FROM MAD_BASE_RANGE_VARIANTS
+WHERE ADDRESS_RANGE_TYPE = 'N'
+AND FROM_ADDRESS_LEFT <> ' '
+AND TO_ADDRESS_LEFT <> ' '
+AND FROM_ADDRESS_RIGHT <> ' ' 
+AND TO_ADDRESS_RIGHT <> ' ';

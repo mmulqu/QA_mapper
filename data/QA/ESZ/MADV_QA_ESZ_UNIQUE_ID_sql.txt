@@ -1,0 +1,16 @@
+# View identifies any records in MAD_EMERGENCY_SERVICE_ZONES polygons where either
+# ES_UNIQUE_ID isn't identical to that record's EMERGENCY_SERVICE_ZONE_ID value, or
+# a given ES_UNIQUE_ID appears more than twice.  (Can appear twice at boundaries)
+
+# DM - 10/12/16
+# "ES_UNIQUE_ID != EMERGENCY_SERVICE_ZONE_ID" removed from WHERE clause with the
+# deletion of the EMERGENCY_SERVICE_ZONE_ID field from BRV.  10/6/17 - DM
+
+CREATE OR REPLACE VIEW MADV_QA_ESZ_UNIQUE_ID AS
+SELECT * FROM MAD_EMERGENCY_SERVICE_ZONES
+WHERE ES_UNIQUE_ID IN 
+   (SELECT DISTINCT ES_UNIQUE_ID
+    FROM (SELECT ES_UNIQUE_ID, COUNT(ES_UNIQUE_ID) AS CNT FROM MAD_EMERGENCY_SERVICE_ZONES
+          GROUP BY ES_UNIQUE_ID)
+    WHERE CNT > 2)
+ORDER BY ES_UNIQUE_ID, ESN, MSAG_COMM;

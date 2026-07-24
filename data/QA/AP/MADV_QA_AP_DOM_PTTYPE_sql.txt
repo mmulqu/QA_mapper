@@ -1,0 +1,13 @@
+# View identifies any features in MAD_ADDRESS_POINTM with an unacceptable POINT_TYPE value.  
+# "Unacceptable" means it is either blank, or is a non-null value not within the acceptable set
+# of domain values.
+# DM - 12/2/16
+
+CREATE OR REPLACE VIEW MADV_QA_AP_DOM_PTTYPE AS 
+SELECT * FROM MAD_ADDRESS_POINTM AP
+WHERE POINT_TYPE IS NULL
+OR NOT EXISTS (SELECT * FROM MADMETA_DOMAINS DOM
+WHERE DOM.DOMAIN_FIELD = 'POINT_TYPE'
+AND DOM.ENTITY_WITH_DOMAIN = 'MAD_ADDRESS_POINTM'
+AND AP.POINT_TYPE = DOM.DOMAIN_VALUE)
+ORDER BY POINT_TYPE, GEOGRAPHIC_TOWN_ID;

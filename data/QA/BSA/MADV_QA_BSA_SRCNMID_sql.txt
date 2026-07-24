@@ -1,0 +1,7 @@
+# View identifies any segments in MAD_BASE_STREET_ARC that have no SOURCE_NAME_ID
+# Every street segment in BASE streets must have a SOURCE_NAME_ID.
+# DM - 9/26/16
+
+CREATE OR REPLACE VIEW MADV_QA_BSA_SRCNMID AS 
+SELECT * FROM MAD_BASE_STREET_ARC
+WHERE SOURCE_NAME_ID IS NULL;

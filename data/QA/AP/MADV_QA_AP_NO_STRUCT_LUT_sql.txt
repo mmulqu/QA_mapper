@@ -1,0 +1,17 @@
+# A view that identifies any structure-based address points in MAD_ADDRESS_POINTM that should
+# have an associated record in the lookup table MAD_ADDPT_STRUCT_LUT linking them to a structure
+# polygon, but don't.  Either a new lookup table record needs to be created, or if the point is
+# obsolete, it (and any associated centroid) should be deleted.  Requires a check to see if the
+# point is associated with any address as well to determine obsolesence.
+# The community ID part of the query ensures that no out-of-state points are erroneously included
+# in the QA output since structure polygons are only captured for Massachusetts at this time.
+# DM - 8/30/16
+
+CREATE OR REPLACE VIEW MADV_QA_AP_NO_STRUCT_LUT AS
+SELECT * FROM MAD_ADDRESS_POINTM AP
+WHERE NOT EXISTS (SELECT * FROM MAD_ADDPT_STRUCT_LUT LUT
+                  WHERE AP.ADDRESS_POINT_ID = LUT.ADDRESS_POINT_ID
+                  AND AP.POINT_TYPE IN ('BC', 'BMP', 'BEP')
+                  AND AP.COMMUNITY_ID < 1000)
+AND POINT_TYPE IN ('BC', 'BMP', 'BEP')
+AND COMMUNITY_ID < 1000;

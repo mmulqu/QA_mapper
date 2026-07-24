@@ -41,7 +41,7 @@ The product is not a general GIS editor or an autonomous production-writing agen
 
 ## Evidence on Hand
 
-The user supplied a detailed workflow and architecture brief in the project conversation. A public Brookline Basic Address Points extract and Advanced Address List are now available locally for a read-only test fixture. They do not provide the secured full MAD schema, structures, lookup tables, variants, QA results, authentication, or publishing environment. Demonstration cases and any public fixture must therefore remain clearly labeled.
+The user supplied a detailed workflow and architecture brief, a dated statewide MAD QA count report with its SQL definitions, and a Rockport MAD town export containing address points, centroids, structures, point/structure lookups, Master Addresses, variants, streets, parcels, sites, sources, and community polygons. The Rockport shapefile/DBF export is suitable for a read-only category-to-town review proof, but several stable row identifiers—including the duplicate lookup `OBJECTID`—were not retained. A public Brookline Basic Address Points extract and Advanced Address List also remain available as a separate read-only display fixture. None of these exports supplies production credentials, authentication, or a safe production publishing target.
 
 ## Product Principles
 

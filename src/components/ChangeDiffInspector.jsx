@@ -55,6 +55,7 @@ export default function ChangeDiffInspector({
   const isWorking = decision?.status === 'accepting'
   const accepted = decision?.status === 'accepted'
   const rejected = decision?.status === 'rejected'
+  const publishBlocked = caseItem.publishEligible === false
 
   return (
     <aside className="change-diff-inspector" aria-label="Agent proposed changes">
@@ -138,15 +139,31 @@ export default function ChangeDiffInspector({
             </div>
           ) : (
             <>
-              <p>Acceptance freezes this reviewed draft and sends it to the server-side ArcPy publisher handoff. It does not give the browser MAD credentials.</p>
+              {publishBlocked ? (
+                <div className="diff-publish-blocker" role="note">
+                  <MessageSquareWarning size={18} />
+                  <span>
+                    <strong>Reviewable, not publishable</strong>
+                    <small>{caseItem.publishBlocker}</small>
+                  </span>
+                </div>
+              ) : (
+                <p>Acceptance freezes this reviewed draft and sends it to the server-side ArcPy publisher handoff. It does not give the browser MAD credentials.</p>
+              )}
               {decision?.error ? <div className="diff-decision-error" role="alert">{decision.error}</div> : null}
               <div className="diff-decision-actions">
                 <button type="button" className="diff-reject-button" onClick={onReject} disabled={isWorking}>
                   <MessageSquareWarning size={17} /> Reject and add feedback
                 </button>
-                <button type="button" className="diff-accept-button" onClick={onAccept} disabled={isWorking}>
+                <button
+                  type="button"
+                  className="diff-accept-button"
+                  onClick={onAccept}
+                  disabled={isWorking || publishBlocked}
+                  title={publishBlocked ? 'An ID-preserving export is required before this edit can be approved.' : undefined}
+                >
                   {isWorking ? <LoaderCircle className="agent-spinner" size={18} /> : <Send size={17} />}
-                  {isWorking ? 'Sending to publisherâ€¦' : 'Accept and send to publisher'}
+                  {publishBlocked ? 'Stable row ID required' : isWorking ? 'Sending to publisherâ€¦' : 'Accept and send to publisher'}
                 </button>
               </div>
             </>

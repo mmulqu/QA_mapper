@@ -1,0 +1,17 @@
+# A view that identifies any records in MAD_ADDRESS_VARIANTS with a non-null MASTER_ADDRESS_ID value that 
+# doesn't exist in MAD_MASTER_ADDRESS.  These address variant records were once associated with a master
+# address record, but that record has since disappeared.  These variants either need to receive the MASTER_ADDRESS_ID
+# value of a master address record that correctly represents it, or have a new master address record created for it 
+# (and that new ID assigned to the associated variants), or the MASTER_ADDRESS_ID needs to be nullified if the record
+# is found to be illegitimate.
+# DM - 1/24/17
+
+
+CREATE OR REPLACE VIEW MADV_QA_AV_MAID_NOMATCH AS 
+SELECT MASTER_ADDRESS_ID, SOURCE_NAME_ID, FULL_NUMBER_STANDARDIZED, INPUT_FULL_STREET_NAME, STREET_NAME_ID, INPUT_FULL_LOCATION, UNIT, GEOGRAPHIC_TOWN_ID, ADDRESS_TOWN_ID, COMMUNITY_ID
+FROM MAD_ADDRESS_VARIANTS AV
+WHERE NOT EXISTS (SELECT * FROM MAD_MASTER_ADDRESS MA
+WHERE AV.MASTER_ADDRESS_ID = MA.MASTER_ADDRESS_ID)
+AND MASTER_ADDRESS_ID IS NOT NULL
+order by geographic_town_id, input_full_street_name, full_number_standardized, unit;
+

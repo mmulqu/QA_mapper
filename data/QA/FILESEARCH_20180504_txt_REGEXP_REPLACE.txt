@@ -1,0 +1,11 @@
+Searching for files in 'E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA' of type '.txt' ... (starting at 05:02:22 PM)
+
+Found 132 files of type '.txt' for review.  Searching contents now...
+Files in 'E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA' of type .txt containing string 'REGEXP_REPLACE':
+
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\FILESEARCH_20180504_txt_REGEXP_REPLACE.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\MSN\MADV_QA_MSN_DOM_REALSTREET_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\MSN\MADV_QA_MSN_DUPE_PARSED_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\MSN\MADV_QA_MSN_PARSED_NM_sql.txt
+
+4 total files found that meet specified criteria. (search ended at 05:02:22 PM)

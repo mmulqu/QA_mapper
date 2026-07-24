@@ -1,0 +1,15 @@
+# View identifies any records in MAD_MASTER_STREET_NAME that erroneously has 
+# the text value '<NULL>' in one or more of the parsed street name fields.
+# These have been found after a copy/paste operation where a true NULL value
+# is pasted as a text string instead.  Should revert back to true NULL.
+# DM - 10/4/16
+
+CREATE OR REPLACE VIEW MADV_QA_MSN_NULL_PARSED AS
+SELECT * FROM MAD_MASTER_STREET_NAME 
+WHERE PRE_MOD LIKE '<N%' 
+OR PRE_DIR LIKE '<N%' 
+OR PRE_TYPE LIKE '<N%' 
+OR STR_NAME_BASE LIKE '<N%' 
+OR POST_TYPE LIKE '<N%' 
+OR POST_DIR LIKE '<N%' 
+OR POST_MOD LIKE '<N%';

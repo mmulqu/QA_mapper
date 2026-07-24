@@ -1,0 +1,22 @@
+# View shows all the records in MAD_MASTER_ADDRESS that have an address point ID value indictative of multiple
+# points, but the associated address variants records indicate only a single parcel (non-null LOC_ID) known.
+# These are candidates to have the address point ID in master address updated to be a single address point,
+# or the address variants might need to be updated to reflect multiple LOC_ID values.
+# DM - 11/6/17
+
+CREATE OR REPLACE VIEW MADV_QA_MA_NOT_MULTI_AP AS
+SELECT * FROM MAD_MASTER_ADDRESS
+WHERE MASTER_ADDRESS_ID IN 
+	(SELECT MASTER_ADDRESS_ID FROM
+		(SELECT MASTER_ADDRESS_ID, COUNT(MASTER_ADDRESS_ID) CNT FROM
+			(SELECT DISTINCT GEOGRAPHIC_TOWN_ID, MASTER_ADDRESS_ID, LOC_ID FROM MAD_ADDRESS_VARIANTS AV
+			 WHERE EXISTS (SELECT * FROM MAD_MASTER_ADDRESS MA
+				       WHERE MA.MASTER_ADDRESS_ID = AV.MASTER_ADDRESS_ID
+				       AND MA.ADDRESS_POINT_ID LIKE 'MULTI%')
+			 AND LOC_ID IS NOT NULL
+			 ORDER BY GEOGRAPHIC_TOWN_ID, MASTER_ADDRESS_ID, LOC_ID)
+		 GROUP BY MASTER_ADDRESS_ID
+		 ORDER BY CNT ASC)
+	 WHERE CNT = 1)
+ORDER BY GEOGRAPHIC_TOWN_ID, MASTER_ADDRESS_ID
+

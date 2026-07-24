@@ -1,16 +1,20 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import L from 'leaflet'
 import {
   CircleMarker,
+  GeoJSON,
   MapContainer,
+  Pane,
   Polygon,
   Polyline,
   TileLayer,
   Tooltip,
   useMap,
+  useMapEvents,
 } from 'react-leaflet'
 import { Bot, GitCompareArrows, Image, Layers3, Map as MapIcon, Minus, Plus, Route } from 'lucide-react'
 import { MAP_SERVICES } from '../config/mapServices'
+import { buildTownFeatureIndex, queryTownFeaturesAtLatLng } from '../lib/mapHitTest'
 
 function MapSync({ caseItem }) {
   const map = useMap()
@@ -154,6 +158,196 @@ function PublicMadMapSync({ snapshot }) {
   return null
 }
 
+function TownExtractMapSync({ extract, caseItem }) {
+  const map = useMap()
+
+  useEffect(() => {
+    if (caseItem?.center) {
+      map.setView(caseItem.center, caseItem.zoom || 18)
+      return
+    }
+    if (!extract.bounds) return
+    map.fitBounds(
+      [
+        [extract.bounds[1], extract.bounds[0]],
+        [extract.bounds[3], extract.bounds[2]],
+      ],
+      { padding: [48, 48], maxZoom: extract.zoom || 15 },
+    )
+  }, [caseItem, extract, map])
+
+  return null
+}
+
+const townLayerStyles = {
+  communities: { color: '#667a7e', weight: 2, dashArray: '7 5', fillColor: '#dce2df', fillOpacity: 0.05 },
+  parcels: { color: '#9aaaa8', weight: 1, fillColor: '#7ab1cf', fillOpacity: 0.05 },
+  structures: { color: '#354d58', weight: 1, fillColor: '#6f8792', fillOpacity: 0.18 },
+  roads: { color: '#273f4a', weight: 2.5, opacity: 0.62 },
+  addresses: { color: '#174d6d', weight: 1.5, fillColor: '#f7f8f5', fillOpacity: 0.95, radius: 4.5 },
+  centroids: { color: '#8b620e', weight: 1.2, fillColor: '#fff7dd', fillOpacity: 0.82, radius: 3.5 },
+}
+
+const townPaneOrder = {
+  communities: 410,
+  parcels: 420,
+  structures: 430,
+  roads: 440,
+  centroids: 450,
+  addresses: 460,
+}
+
+function TownMapClickQuery({ featureIndex, visibleLayers, onQueryFeatures }) {
+  useMapEvents({
+    click(event) {
+      const results = queryTownFeaturesAtLatLng({
+        featureIndex,
+        visibleLayers,
+        latlng: event.latlng,
+        map: event.target,
+      })
+      onQueryFeatures({
+        latlng: [event.latlng.lat, event.latlng.lng],
+        results,
+      })
+    },
+  })
+
+  return null
+}
+
+function TownExtractWorkspace({
+  extract,
+  caseItem,
+  highlightedFeatureKey,
+  queryResultKeys,
+  onQueryFeatures,
+  visibleLayers,
+  setVisibleLayers,
+  baseMap,
+  setBaseMap,
+  changeCount,
+  onShowDiff,
+  onShowAgent,
+}) {
+  const activeBaseMap = activeMapService(baseMap)
+  const targetAddress = caseItem.records?.addressPoint?.id
+  const targetStructure = caseItem.records?.structure?.id
+  const vectorLayers = extract.layers.map((layer) => [layer.id, `${layer.label} (${layer.count.toLocaleString()})`])
+  const featureIndex = useMemo(() => buildTownFeatureIndex(extract), [extract])
+  const queryResults = useMemo(() => new Set(queryResultKeys), [queryResultKeys])
+  const querySignature = queryResultKeys.join('|')
+
+  const isIssueFeature = (feature) => (
+    (feature.properties.__layer === 'addresses' && feature.properties.__id === targetAddress)
+    || (feature.properties.__layer === 'structures' && feature.properties.__id === targetStructure)
+  )
+
+  const styleFor = (feature) => {
+    const baseStyle = townLayerStyles[feature.properties.__layer] || townLayerStyles.parcels
+    if (feature.properties.__recordKey === highlightedFeatureKey) {
+      return {
+        ...baseStyle,
+        color: '#0d638f',
+        weight: Math.max(baseStyle.weight || 1, 5),
+        fillOpacity: 0.38,
+        radius: Math.max(baseStyle.radius || 0, 8),
+      }
+    }
+    if (queryResults.has(feature.properties.__recordKey)) {
+      return {
+        ...baseStyle,
+        color: '#8b620e',
+        weight: Math.max(baseStyle.weight || 1, 3),
+        fillOpacity: 0.26,
+        radius: Math.max(baseStyle.radius || 0, 6.5),
+      }
+    }
+    if (isIssueFeature(feature)) {
+      return { ...baseStyle, color: '#b63d31', weight: Math.max(baseStyle.weight || 1, 3), fillOpacity: 0.3 }
+    }
+    return baseStyle
+  }
+
+  return (
+    <section className="map-workspace" aria-label={`Rockport town extract for ${caseItem.address}`}>
+      <MapContainer
+        center={caseItem.center || extract.center}
+        zoom={caseItem.zoom || extract.zoom}
+        zoomControl={false}
+        className="map-canvas"
+        preferCanvas
+      >
+        <TileLayer
+          attribution={activeBaseMap.attribution}
+          maxNativeZoom={activeBaseMap.maxNativeZoom}
+          url={activeBaseMap.url}
+        />
+        <TownExtractMapSync extract={extract} caseItem={caseItem} />
+        <MapZoomControls />
+        <TownMapClickQuery
+          featureIndex={featureIndex}
+          visibleLayers={visibleLayers}
+          onQueryFeatures={onQueryFeatures}
+        />
+
+        {extract.layers
+          .filter((layer) => visibleLayers.includes(layer.id))
+          .map((layer) => (
+            <Pane
+              key={layer.id}
+              name={`town-${layer.id}`}
+              style={{ zIndex: townPaneOrder[layer.id] ?? 425 }}
+            >
+              <GeoJSON
+                key={`${layer.id}-${highlightedFeatureKey || 'none'}-${querySignature}-${baseMap}`}
+                data={layer.geojson}
+                style={styleFor}
+                pointToLayer={(feature, latlng) => {
+                  const options = styleFor(feature)
+                  return L.circleMarker(latlng, {
+                    ...options,
+                    pane: `town-${layer.id}`,
+                    radius: options.radius || 4,
+                  })
+                }}
+                onEachFeature={(feature, leafletLayer) => {
+                const properties = feature.properties
+                const label = properties.LABEL_TEXT
+                  || properties.SITE_ADDR
+                  || properties.COMMUNITY1
+                  || properties.STREET_N_1
+                  || properties.__id
+                leafletLayer.bindTooltip(`${layer.label}: ${label} — click to query this location`, { sticky: true })
+                }}
+              />
+            </Pane>
+          ))}
+      </MapContainer>
+
+      <div className="map-case-label qa-case-label">
+        <span className="map-case-id">{caseItem.issueCode}</span>
+        <strong>{caseItem.address}</strong>
+        <span>{caseItem.municipality} · read-only town extract</span>
+      </div>
+      <LayerPicker
+        visibleLayers={visibleLayers}
+        setVisibleLayers={setVisibleLayers}
+        baseMap={baseMap}
+        setBaseMap={setBaseMap}
+        vectorLayers={vectorLayers}
+      />
+      <ChangeDiffControl changeCount={changeCount} onShowDiff={onShowDiff} />
+      <AgentControl onShowAgent={onShowAgent} />
+      <div className="map-legend town-extract-legend" aria-label="Town extract map legend">
+        <span><i className="legend-dot current" /> QA feature</span>
+        <span><i className="legend-dot other" /> Town extract</span>
+        <span>{extract.layers.reduce((sum, layer) => sum + layer.count, 0).toLocaleString()} mapped features</span>
+      </div>
+    </section>
+  )
+}
+
 function PublicMadWorkspace({
   snapshot,
   selectedFeatureKey,
@@ -240,10 +434,33 @@ export default function MapWorkspace({
   baseMap,
   setBaseMap,
   publicSnapshot,
+  townExtract,
+  highlightedFeatureKey,
+  queryResultKeys = [],
+  onQueryFeatures,
   changeCount,
   onShowDiff,
   onShowAgent,
 }) {
+  if (townExtract) {
+    return (
+      <TownExtractWorkspace
+        extract={townExtract}
+        caseItem={caseItem}
+        highlightedFeatureKey={highlightedFeatureKey}
+        queryResultKeys={queryResultKeys}
+        onQueryFeatures={onQueryFeatures}
+        visibleLayers={visibleLayers}
+        setVisibleLayers={setVisibleLayers}
+        baseMap={baseMap}
+        setBaseMap={setBaseMap}
+        changeCount={changeCount}
+        onShowDiff={onShowDiff}
+        onShowAgent={onShowAgent}
+      />
+    )
+  }
+
   if (publicSnapshot) {
     return (
       <PublicMadWorkspace

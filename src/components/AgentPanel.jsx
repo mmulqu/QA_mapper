@@ -9,7 +9,15 @@ const starterPrompts = [
   'Review the evidence and stage a draft if it is safe.',
 ]
 
-export default function AgentPanel({ caseItem, onClose, onDraftStaged, onReviewDraft, reviewerFeedback }) {
+export default function AgentPanel({
+  caseItem,
+  onClose,
+  onDraftStaged,
+  onReviewDraft,
+  reviewerFeedback,
+  initialResult = null,
+  automaticStatus = 'idle',
+}) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [status, setStatus] = useState('idle')
@@ -24,9 +32,21 @@ export default function AgentPanel({ caseItem, onClose, onDraftStaged, onReviewD
     setHasDraft(false)
   }, [caseItem.id])
 
+  useEffect(() => {
+    if (!initialResult?.reply) return
+    setMessages([{
+      role: 'agent',
+      content: initialResult.reply,
+      tools: initialResult.toolEvents ?? [],
+    }])
+    setHasDraft(Boolean(initialResult.draft?.changes?.length))
+  }, [initialResult])
+
+  const isWorking = status === 'working' || automaticStatus === 'working'
+
   const submit = async (message) => {
     const prompt = message.trim()
-    if (!prompt || status === 'working') return
+    if (!prompt || isWorking) return
 
     setMessages((current) => [...current, { role: 'user', content: prompt }])
     setInput('')
@@ -52,7 +72,7 @@ export default function AgentPanel({ caseItem, onClose, onDraftStaged, onReviewD
   }
 
   return (
-    <aside className="agent-panel" aria-label="Local MAD agent" aria-busy={status === 'working'}>
+    <aside className="agent-panel" aria-label="Local MAD agent" aria-busy={isWorking}>
       <header className="agent-header">
         <span className="agent-header-icon"><Bot size={21} /></span>
         <div>
@@ -65,7 +85,7 @@ export default function AgentPanel({ caseItem, onClose, onDraftStaged, onReviewD
       </header>
 
       <div className="agent-scroll-region">
-        <p className="agent-scope-note"><Sparkles size={16} /> LM Studio reads this case only. It can stage a training draft, never publish one.</p>
+        <p className="agent-scope-note"><Sparkles size={16} /> LM Studio reads this issue and its selected town extract. It can stage a review draft, never publish one.</p>
 
         {reviewerFeedback?.status === 'active' ? (
           <div className="agent-review-feedback">
@@ -79,7 +99,7 @@ export default function AgentPanel({ caseItem, onClose, onDraftStaged, onReviewD
           <div className="agent-starters">
             <strong>Ask about this case</strong>
             {[...starterPrompts, ...(reviewerFeedback?.status === 'active' ? ['Review the reviewer feedback and propose a revised draft if the evidence supports one.'] : [])].map((prompt) => (
-              <button type="button" key={prompt} onClick={() => submit(prompt)} disabled={status === 'working'}>
+              <button type="button" key={prompt} onClick={() => submit(prompt)} disabled={isWorking}>
                 {prompt}
               </button>
             ))}
@@ -107,17 +127,27 @@ export default function AgentPanel({ caseItem, onClose, onDraftStaged, onReviewD
                 ) : null}
               </article>
             ))}
-            {status === 'working' ? (
+            {isWorking ? (
               <div className="agent-working" role="status" aria-live="polite">
                 <LoaderCircle className="agent-spinner" size={20} aria-hidden="true" />
                 <span>
                   <strong>Agent is working</strong>
-                  <small>Reviewing case evidence...</small>
+                  <small>{automaticStatus === 'working' ? 'Narrowing QA rows and selecting a town extract…' : 'Reviewing case evidence…'}</small>
                 </span>
               </div>
             ) : null}
           </div>
         )}
+
+        {messages.length === 0 && isWorking ? (
+          <div className="agent-working is-primary" role="status" aria-live="polite">
+            <LoaderCircle className="agent-spinner" size={20} aria-hidden="true" />
+            <span>
+              <strong>Agent is investigating</strong>
+              <small>Narrowing QA rows and selecting a town extract…</small>
+            </span>
+          </div>
+        ) : null}
 
         {error ? <div className="agent-error" role="alert">{error} Start LM Studio and the local bridge, then try again.</div> : null}
       </div>
@@ -130,9 +160,9 @@ export default function AgentPanel({ caseItem, onClose, onDraftStaged, onReviewD
             value={input}
             onChange={(event) => setInput(event.target.value)}
             placeholder="Ask why this was flagged"
-            disabled={status === 'working'}
+            disabled={isWorking}
           />
-          <button type="submit" aria-label="Send message" disabled={!input.trim() || status === 'working'}>
+          <button type="submit" aria-label="Send message" disabled={!input.trim() || isWorking}>
             <Send size={18} />
           </button>
         </div>

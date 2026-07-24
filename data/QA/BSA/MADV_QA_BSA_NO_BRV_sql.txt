@@ -1,0 +1,12 @@
+# View identifies any records in MAD_BASE_STREET_ARC that don't have any associated  
+# records in BASE_RANGE_VARIANTS.  (association is by having a common BASE_SEGMENT_ID
+# in both datasets.  Every base street arc should have at least one associated
+# base range variant record.
+# DM - 9/26/16
+
+CREATE OR REPLACE VIEW MADV_QA_BSA_NO_BRV AS 
+SELECT * FROM MAD_BASE_STREET_ARC
+WHERE BASE_SEGMENT_ID IN (
+    (SELECT DISTINCT BASE_SEGMENT_ID FROM MAD_BASE_STREET_ARC)
+     MINUS
+     SELECT DISTINCT BASE_SEGMENT_ID FROM MAD_BASE_RANGE_VARIANTS);

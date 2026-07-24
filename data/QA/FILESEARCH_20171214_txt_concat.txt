@@ -1,0 +1,16 @@
+Searching for files in 'E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA' of type '.txt' ... (starting at 10:04:32 AM)
+
+Found 129 files of type '.txt' for review.  Searching contents now...
+Files in 'E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA' of type .txt containing string '\|\|':
+
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\ESZ\MADV_QA_ESZ_LUT_NOT_ESZ.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\ESZ\MADV_QA_ESZ_MSAG_NOT_ESZ_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\ESZ\MADV_QA_ESZ_MULTICOMM_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\ESZ\MADV_QA_ESZ_NOT_LUT.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\ESZ\MADV_QA_ESZ_NOT_MSAG_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\MA\MADV_QA_MA_DUPES_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\MA\MADV_QA_MA_NUM_PARSE_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\MSN\MADV_QA_MSN_DUPE_PARSED_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\MSN\MADV_QA_MSN_PARSED_NM_sql.txt
+
+9 total files found that meet specified criteria. (search ended at 10:04:32 AM)

@@ -1,0 +1,34 @@
+Searching for files in 'E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA' of type '.txt' ... (starting at 05:02:08 PM)
+
+Found 131 files of type '.txt' for review.  Searching contents now...
+Files in 'E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA' of type .txt containing string 'REGEXP_':
+
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\FILESEARCH_20180504_txt_REGEXP_.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\AP\MADV_QA_AP_EDIT_DATE_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\AP\MADV_QA_AP_LOCID_PTTYPE_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BRV\MADV_QA_BRV_MAX_E_ESL_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BRV\MADV_QA_BRV_MAX_E_MA_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BRV\MADV_QA_BRV_MAX_O_ESL_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BRV\MADV_QA_BRV_MAX_O_MA_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BRV\MADV_QA_BRV_NO_BSA_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BRV\MADV_QA_BRV_NUM_REGEXP_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BRV\MADV_QA_BRV_OVRLAP_ARC_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BRV\MADV_QA_BRV_OVRLAP_LL_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BRV\MADV_QA_BRV_OVRLAP_LR_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BRV\MADV_QA_BRV_OVRLAP_RR_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BRV\MADV_QA_BRV_PARITY_EOM_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BRV\MADV_QA_BRV_RNG_BM_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BSA\MADV_QA_BSA_EDITBY_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BSA\MADV_QA_BSA_EDITDATE_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BSA\MADV_QA_BSA_NAVTEQ_IDS_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BSA\MADV_QA_BSA_SGMNT_DATE_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\BSA\MADV_QA_BSA_ZIPS_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\MA\MADV_QA_MA_EDIT_DATE_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\MSN\MADV_QA_MSN_COMMID_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\MSN\MADV_QA_MSN_DOM_REALSTREET_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\MSN\MADV_QA_MSN_DUPE_PARSED_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\MSN\MADV_QA_MSN_PARSED_NM_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\MSN\MADV_QA_MSN_STRTNM_sql.txt
+E:\MassGIS\E911\MAD_Maintenance\code\SQL\QA\SNV\MADV_QA_SNV_EDITDATE_sql.txt
+
+27 total files found that meet specified criteria. (search ended at 05:02:09 PM)

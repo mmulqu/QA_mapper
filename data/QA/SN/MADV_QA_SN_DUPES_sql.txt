@@ -1,0 +1,21 @@
+# View shows all the records in MAD_SITE_NAMES that exist as unintentional duplicates. where two or more 
+# different SITE_ID values are referenced, it will be necessary to merge those site polygons into a single
+# multi-part polygon and update their SITE_ID values throughout the MAD.  Where a single non-null SITE_ID 
+# value is associated with a given site name and the duplicates have a null SITE_ID, the records in the
+# MAD with the SITE_NAME_ID of the null SITE_ID record should be updated to have the SITE_NAME_ID of the 
+# record with the non-null SITE_ID, after confirming that those addresses are physically located in that
+# site.  After this, the obsolete site name record can be deleted.  Alternately, if may be necessary to 
+# change one or more of the SITE_NAME values if the associated site polygons are not correctly associated with
+# the identified site names. 
+# DM - 1/24/17
+
+CREATE OR REPLACE VIEW MADV_QA_SN_DUPES AS 
+SELECT * FROM MAD_SITE_NAMES SN
+WHERE EXISTS ((SELECT * FROM 
+(SELECT SITE_NAME, GEOGRAPHIC_TOWN_ID, COUNT(SITE_NAME) CNT FROM MAD_SITE_NAMES
+GROUP BY SITE_NAME, GEOGRAPHIC_TOWN_ID
+ORDER BY CNT DESC) QRY
+WHERE SN.SITE_NAME = QRY.SITE_NAME
+AND SN.GEOGRAPHIC_TOWN_ID = QRY.GEOGRAPHIC_TOWN_ID
+AND QRY.CNT > 1))
+ORDER BY SITE_NAME, GEOGRAPHIC_TOWN_ID, SITE_NAME_ID;

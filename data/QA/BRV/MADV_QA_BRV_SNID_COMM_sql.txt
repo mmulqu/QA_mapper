@@ -1,0 +1,21 @@
+# View identifies any records in MAD_BASE_RANGE_VARIANTS with a left or right community ID that doesn't.  
+# match the COMMUNITY_ID value associated with the street name in MAD_MASTER_STREET_NAME.
+# DM - 9/7/16
+# Re-incorporated Barnstable comms by removing this line...
+# AND COMMUNITY_ID NOT         IN (21, 56, 74, 154, 187, 242, 346) -- FILTERED BARNSTABLE PENDING COMMUNITY BOUNDARY UPDATE
+# 3/29/17 - DM
+# Re-incorporated Boston comms by commenting out exclusion.  10/19/17 - DM
+
+CREATE OR REPLACE VIEW MADV_QA_BRV_SNID_COMM AS
+  SELECT BRV.BASE_SEGMENT_ID, BRV.COMMUNITY_ID_LEFT, BRV.COMMUNITY_ID_RIGHT, BRV.STREET_NAME_ID, MSN.street_name, msn.community_id
+  FROM MAD_BASE_RANGE_VARIANTS BRV, MAD_MASTER_STREET_NAME MSN
+  WHERE BRV.STREET_NAME_ID = MSN.STREET_NAME_ID
+  AND 
+    (
+    (BRV.COMMUNITY_ID_LEFT <> MSN.COMMUNITY_ID
+    OR BRV.COMMUNITY_ID_RIGHT <> MSN.COMMUNITY_ID)
+    AND (BRV.alias_flag <> 'A' AND BRV.alias_flag <> 'N')
+    )
+  --AND COMMUNITY_ID NOT IN (37, 45, 58, 85, 92, 155, 158, 189, 271, 274, 296, 352, 381)
+  ORDER BY msn.community_id, msn.street_name 
+  ;
