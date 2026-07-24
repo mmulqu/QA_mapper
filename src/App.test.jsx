@@ -132,7 +132,7 @@ describe('MAD QA feature explorer', () => {
 
   it('sends a case-scoped question to the local agent bridge', async () => {
     const agentReply = {
-      reply: 'The point falls outside its linked parcel and the proposed entrance agrees with the structure footprint.',
+      reply: '### Evidence\n\nThe **linked parcel** supports `AP-100294`.\n\n- Parcel boundary\n- Structure footprint',
       toolEvents: [{ name: 'get_case', summary: 'Read case snapshot' }],
     }
     vi.stubGlobal('fetch', vi.fn((url) => {
@@ -145,9 +145,33 @@ describe('MAD QA feature explorer', () => {
     await user.click(screen.getByRole('button', { name: 'Open local agent' }))
     await user.click(screen.getByRole('button', { name: 'Why was this case flagged?' }))
 
-    expect(await screen.findByText(agentReply.reply)).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Evidence', level: 3 })).toBeInTheDocument()
+    expect(screen.getByText('linked parcel').tagName).toBe('STRONG')
+    expect(screen.getByText('AP-100294').tagName).toBe('CODE')
+    expect(screen.getAllByRole('listitem')).toHaveLength(2)
     expect(screen.getByText('Read case snapshot')).toBeInTheDocument()
     expect(globalThis.fetch).toHaveBeenCalledWith('/api/cases/MAD-2026-1842/agent', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('shows a spinner while the local agent is processing', async () => {
+    let resolveAgentRequest
+    const agentReply = { reply: 'The case was reviewed.', toolEvents: [] }
+    vi.stubGlobal('fetch', vi.fn((url) => {
+      if (url === '/test-data/brookline-mad-snapshot.json') return Promise.resolve({ ok: false })
+      return new Promise((resolve) => { resolveAgentRequest = resolve })
+    }))
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'Open local agent' }))
+    await user.click(screen.getByRole('button', { name: 'Why was this case flagged?' }))
+
+    expect(screen.getByRole('status')).toHaveTextContent('Agent is working')
+    expect(screen.getByText(/Reviewing case evidence/)).toBeInTheDocument()
+
+    resolveAgentRequest({ ok: true, json: async () => agentReply })
+    expect(await screen.findByText(agentReply.reply)).toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
   it('withholds the approval action for a case awaiting municipal evidence', async () => {

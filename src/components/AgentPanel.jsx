@@ -1,5 +1,7 @@
-import { Bot, CheckCircle2, Send, Sparkles, Wrench, X } from 'lucide-react'
+import { Bot, CheckCircle2, LoaderCircle, Send, Sparkles, Wrench, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { askLocalAgent } from '../lib/agentClient'
 
 const starterPrompts = [
@@ -50,7 +52,7 @@ export default function AgentPanel({ caseItem, onClose, onDraftStaged, onReviewD
   }
 
   return (
-    <aside className="agent-panel" aria-label="Local MAD agent">
+    <aside className="agent-panel" aria-label="Local MAD agent" aria-busy={status === 'working'}>
       <header className="agent-header">
         <span className="agent-header-icon"><Bot size={21} /></span>
         <div>
@@ -79,7 +81,17 @@ export default function AgentPanel({ caseItem, onClose, onDraftStaged, onReviewD
             {messages.map((message, index) => (
               <article className={`agent-message ${message.role}`} key={`${message.role}-${index}`}>
                 <span>{message.role === 'user' ? 'You' : 'Local agent'}</span>
-                <p>{message.content}</p>
+                <div className="agent-markdown">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    skipHtml
+                    components={{
+                      a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a>,
+                    }}
+                  >
+                    {message.content}
+                  </ReactMarkdown>
+                </div>
                 {message.tools?.length ? (
                   <div className="agent-tool-list">
                     {message.tools.map((tool) => <small key={`${tool.name}-${tool.summary}`}><Wrench size={13} /> {tool.summary}</small>)}
@@ -87,7 +99,15 @@ export default function AgentPanel({ caseItem, onClose, onDraftStaged, onReviewD
                 ) : null}
               </article>
             ))}
-            {status === 'working' ? <div className="agent-working">Reviewing case evidenceâ€¦</div> : null}
+            {status === 'working' ? (
+              <div className="agent-working" role="status" aria-live="polite">
+                <LoaderCircle className="agent-spinner" size={20} aria-hidden="true" />
+                <span>
+                  <strong>Agent is working</strong>
+                  <small>Reviewing case evidence...</small>
+                </span>
+              </div>
+            ) : null}
           </div>
         )}
 
