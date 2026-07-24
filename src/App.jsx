@@ -8,8 +8,6 @@ FORM: Map-first feature explorer with progressive disclosure; no persistent evid
 
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Check,
-  CheckCircle2,
   ChevronRight,
   CircleDot,
   Database,
@@ -22,11 +20,13 @@ import {
 import AgentPanel from './components/AgentPanel'
 import ChangeDiffInspector from './components/ChangeDiffInspector'
 import MapWorkspace from './components/MapWorkspace'
+import RejectDraftDialog from './components/RejectDraftDialog'
 import { MAP_SERVICES } from './config/mapServices'
 import { cases } from './data/cases'
 import { getFeatureRecords, relatedKeys } from './lib/featureRecords'
 import { countChangedFields, getCaseChanges } from './lib/changeDiff'
 import { getPublicMadRecords } from './lib/publicMadRecords'
+import { acceptCaseDraft, getProposalLineage, rejectCaseDraft } from './lib/agentClient'
 
 const featureIcons = {
   'address-point': MapPin,
@@ -119,12 +119,10 @@ function CaseDocket({
   )
 }
 
-function FeatureInspector({ caseItem, records, featureKey, onSelectFeature, onClose, approved, onApprove }) {
+function FeatureInspector({ records, featureKey, onSelectFeature, onClose }) {
   const record = records[featureKey]
   if (!record) return null
   const relations = relatedKeys(record)
-  const isAddressPoint = record.key === 'address-point'
-  const needsEvidence = caseItem.status === 'evidence'
 
   return (
     <aside className="feature-inspector" aria-label="Selected feature attributes">
@@ -173,27 +171,6 @@ function FeatureInspector({ caseItem, records, featureKey, onSelectFeature, onCl
           })}
         </div>
       </section>
-
-      {isAddressPoint && (
-        <section className="proposal-action">
-          {needsEvidence ? (
-            <div className="action-hold">
-              <strong>No edit proposal</strong>
-              <span>Municipal evidence is required before a change can be accepted.</span>
-            </div>
-          ) : approved ? (
-            <div className="action-approved">
-              <CheckCircle2 size={20} />
-              <span>Proposal accepted in training</span>
-            </div>
-          ) : (
-            <button type="button" className="approve-button" onClick={onApprove}>
-              <Check size={18} />
-              Accept proposed change
-            </button>
-          )}
-        </section>
-      )}
     </aside>
   )
 }
@@ -204,12 +181,16 @@ export default function App() {
   const [docketCollapsed, setDocketCollapsed] = useState(false)
   const [visibleLayers, setVisibleLayers] = useState(['addresses', 'structures', 'parcels', 'roads'])
   const [baseMap, setBaseMap] = useState(MAP_SERVICES.massgisBasemap.id)
-  const [approvedCases, setApprovedCases] = useState([])
   const [activeDataView, setActiveDataView] = useState('cases')
   const [publicSnapshot, setPublicSnapshot] = useState(null)
   const [showChangeDiff, setShowChangeDiff] = useState(false)
   const [showAgent, setShowAgent] = useState(false)
   const [agentDrafts, setAgentDrafts] = useState({})
+  const [reviewDecisions, setReviewDecisions] = useState({})
+  const [reviewerFeedback, setReviewerFeedback] = useState({})
+  const [proposalLineages, setProposalLineages] = useState({})
+  const [showRejectDialog, setShowRejectDialog] = useState(false)
+  const [rejectState, setRejectState] = useState({ submitting: false, error: '' })
 
   useEffect(() => {
     if (typeof globalThis.fetch !== 'function') return undefined
@@ -240,10 +221,24 @@ export default function App() {
   const activeAgentDraft = agentDrafts[caseItem.id]
   const activeChanges = activeAgentDraft?.changes ?? getCaseChanges(caseItem)
   const changeCount = useMemo(() => countChangedFields(activeChanges), [activeChanges])
+  const activeDecision = reviewDecisions[caseItem.id]
+  const activeFeedback = reviewerFeedback[caseItem.id]
+  const activeProposalLineage = proposalLineages[caseItem.id] ?? []
+  const activeProposal = activeAgentDraft ?? [...activeProposalLineage].reverse().find((proposal) => proposal.status === 'staged')
+
+  const loadProposalLineage = async (caseId) => {
+    try {
+      const proposals = await getProposalLineage(caseId)
+      setProposalLineages((current) => ({ ...current, [caseId]: proposals }))
+    } catch {
+      // History is supplemental to the review sheet; the draft remains usable if it is unavailable.
+    }
+  }
 
   const selectFeature = (featureKey) => {
     setShowChangeDiff(false)
     setShowAgent(false)
+    setShowRejectDialog(false)
     setSelectedFeatureKey(featureKey)
   }
 
@@ -253,6 +248,7 @@ export default function App() {
     setSelectedFeatureKey(null)
     setShowChangeDiff(false)
     setShowAgent(false)
+    setShowRejectDialog(false)
     setDocketCollapsed(false)
   }
 
@@ -261,7 +257,39 @@ export default function App() {
     setSelectedFeatureKey(null)
     setShowChangeDiff(false)
     setShowAgent(false)
+    setShowRejectDialog(false)
     setDocketCollapsed(false)
+  }
+
+  const acceptDraft = async () => {
+    setReviewDecisions((current) => ({ ...current, [caseItem.id]: { status: 'accepting' } }))
+    try {
+      const result = await acceptCaseDraft(caseItem.id)
+      if (result.proposals) setProposalLineages((current) => ({ ...current, [caseItem.id]: result.proposals }))
+      setReviewDecisions((current) => ({
+        ...current,
+        [caseItem.id]: { status: 'accepted', publisher: result.publisher, job: result.job },
+      }))
+    } catch (error) {
+      setReviewDecisions((current) => ({ ...current, [caseItem.id]: { status: 'ready', error: error.message } }))
+    }
+  }
+
+  const rejectDraft = async (comment) => {
+    setRejectState({ submitting: true, error: '' })
+    try {
+      const result = await rejectCaseDraft(caseItem.id, comment)
+      setReviewerFeedback((current) => ({ ...current, [caseItem.id]: result.rejection }))
+      if (result.proposals) setProposalLineages((current) => ({ ...current, [caseItem.id]: result.proposals }))
+      setReviewDecisions((current) => ({ ...current, [caseItem.id]: { status: 'rejected' } }))
+      setShowRejectDialog(false)
+      setShowChangeDiff(false)
+      setShowAgent(true)
+    } catch (error) {
+      setRejectState({ submitting: false, error: error.message })
+      return
+    }
+    setRejectState({ submitting: false, error: '' })
   }
 
   return (
@@ -300,6 +328,7 @@ export default function App() {
             setSelectedFeatureKey(null)
             setShowAgent(false)
             setShowChangeDiff(true)
+            void loadProposalLineage(caseItem.id)
           }}
           onShowAgent={() => {
             setSelectedFeatureKey(null)
@@ -309,13 +338,10 @@ export default function App() {
         />
         {selectedFeatureKey && (
           <FeatureInspector
-            caseItem={caseItem}
             records={records}
             featureKey={selectedFeatureKey}
             onSelectFeature={selectFeature}
             onClose={() => setSelectedFeatureKey(null)}
-            approved={approvedCases.includes(activeCaseId)}
-            onApprove={() => setApprovedCases((current) => [...new Set([...current, activeCaseId])])}
           />
         )}
         {showChangeDiff && activeDataView === 'cases' && !selectedFeatureKey && (
@@ -324,19 +350,42 @@ export default function App() {
             changes={activeChanges}
             onClose={() => setShowChangeDiff(false)}
             onSelectFeature={selectFeature}
+            decision={activeDecision}
+            proposal={activeProposal}
+            proposalLineage={activeProposalLineage}
+            onAccept={acceptDraft}
+            onReject={() => {
+              setRejectState({ submitting: false, error: '' })
+              setShowRejectDialog(true)
+            }}
           />
         )}
         {showAgent && activeDataView === 'cases' && !selectedFeatureKey && (
           <AgentPanel
             caseItem={caseItem}
             onClose={() => setShowAgent(false)}
-            onDraftStaged={(draft) => setAgentDrafts((current) => ({ ...current, [caseItem.id]: draft }))}
+            reviewerFeedback={activeFeedback}
+            onDraftStaged={(draft, feedback, proposals) => {
+              setAgentDrafts((current) => ({ ...current, [caseItem.id]: draft }))
+              if (feedback) setReviewerFeedback((current) => ({ ...current, [caseItem.id]: feedback }))
+              if (proposals) setProposalLineages((current) => ({ ...current, [caseItem.id]: proposals }))
+              setReviewDecisions((current) => ({ ...current, [caseItem.id]: { status: 'ready' } }))
+            }}
             onReviewDraft={() => {
               setShowAgent(false)
               setShowChangeDiff(true)
             }}
           />
         )}
+        {showRejectDialog && activeDataView === 'cases' ? (
+          <RejectDraftDialog
+            caseItem={caseItem}
+            submitting={rejectState.submitting}
+            error={rejectState.error}
+            onCancel={() => setShowRejectDialog(false)}
+            onSubmit={rejectDraft}
+          />
+        ) : null}
       </main>
     </div>
   )

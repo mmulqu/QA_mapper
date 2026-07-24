@@ -9,7 +9,7 @@ const starterPrompts = [
   'Review the evidence and stage a draft if it is safe.',
 ]
 
-export default function AgentPanel({ caseItem, onClose, onDraftStaged, onReviewDraft }) {
+export default function AgentPanel({ caseItem, onClose, onDraftStaged, onReviewDraft, reviewerFeedback }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [status, setStatus] = useState('idle')
@@ -42,7 +42,7 @@ export default function AgentPanel({ caseItem, onClose, onDraftStaged, onReviewD
       }])
       if (result.draft?.validation?.passed) {
         setHasDraft(true)
-        onDraftStaged(result.draft)
+        onDraftStaged(result.draft, result.reviewerFeedback, result.proposals)
       }
       setStatus('idle')
     } catch (requestError) {
@@ -67,10 +67,18 @@ export default function AgentPanel({ caseItem, onClose, onDraftStaged, onReviewD
       <div className="agent-scroll-region">
         <p className="agent-scope-note"><Sparkles size={16} /> LM Studio reads this case only. It can stage a training draft, never publish one.</p>
 
+        {reviewerFeedback?.status === 'active' ? (
+          <div className="agent-review-feedback">
+            <strong>Reviewer feedback is in context</strong>
+            <p>{reviewerFeedback.comment}</p>
+            <small>The next request automatically includes this feedback so the agent can revise its draft.</small>
+          </div>
+        ) : null}
+
         {messages.length === 0 ? (
           <div className="agent-starters">
             <strong>Ask about this case</strong>
-            {starterPrompts.map((prompt) => (
+            {[...starterPrompts, ...(reviewerFeedback?.status === 'active' ? ['Review the reviewer feedback and propose a revised draft if the evidence supports one.'] : [])].map((prompt) => (
               <button type="button" key={prompt} onClick={() => submit(prompt)} disabled={status === 'working'}>
                 {prompt}
               </button>
