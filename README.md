@@ -6,7 +6,7 @@ The current app focuses on the geometry-and-record inspection loop without conne
 
 - select an address QA case;
 - view address-point, structure, parcel, road, and nearby-address vectors on a Leaflet map;
-- switch between street and imagery basemaps and control vector visibility;
+- switch between the public MassGIS basemap and MassGIS 2025 natural-color imagery, and control vector visibility;
 - click a vector to open its full attribute table;
 - follow preset relations between address points, Master Address, MAD structure, structure lookup, address variants, and parcel;
 - accept an eligible address-point proposal locally in the training workspace.
@@ -32,7 +32,17 @@ npm run build
 3. Neighboring address points as clickable sequence context.
 4. A no-proposal state for cases that need municipal evidence.
 
-All displayed records and geometries are synthetic. Street and imagery tiles are referenced from public services; no private MassGIS service or credential is embedded in the client.
+The default QA cases are synthetic. Basemap and imagery tiles are referenced from public MassGIS services; no private MassGIS service or credential is embedded in the client. The public map-service URLs and the staged data/agent plan are in [docs/ROADMAP.md](docs/ROADMAP.md).
+
+## Optional public MAD test fixture
+
+This workspace can also show a read-only, public Brookline MAD snapshot in the left-hand list. It contains Basic Address Points joined to the Advanced Address List by `ADDRESS_ID`; it has no edit or publish action.
+
+```powershell
+python scripts/build_public_mad_fixture.py
+```
+
+The generator expects the downloaded MassGIS Brookline archives under `.data/mad/brookline/` and writes an ignored local file at `public/test-data/brookline-mad-snapshot.json`. See [docs/PUBLIC_MAD_TEST_FIXTURE.md](docs/PUBLIC_MAD_TEST_FIXTURE.md) for download, metadata, provenance, and limitations.
 
 ## Agent-facing contract
 

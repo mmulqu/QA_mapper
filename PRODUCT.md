@@ -36,11 +36,12 @@ The product is not a general GIS editor or an autonomous production-writing agen
 - Publishing must freeze the approved changeset, recheck production preconditions, apply related edits transactionally, validate the result, and roll back on failure.
 - The first demonstrable release supports moving an existing point, linking a Master Address to an existing point, and creating/linking a new point.
 - Until real MAD schemas, services, authentication, and ArcPy workers are supplied, publishing is a clearly labeled simulation against synthetic case data.
+- A public municipal MAD export may be shown only as a read-only local test snapshot. It is never treated as the secured relational MAD source required for drafting or publishing.
 - Exact production database schema, identity provider, deployment environment, and publishing mechanism remain open implementation decisions.
 
 ## Evidence on Hand
 
-The user supplied a detailed workflow and architecture brief in the project conversation. No production MAD extracts, field schemas, imagery credentials, visual identity assets, testimonials, benchmarks, or deployment claims are present in the workspace. Demonstration cases must therefore be clearly labeled synthetic.
+The user supplied a detailed workflow and architecture brief in the project conversation. A public Brookline Basic Address Points extract and Advanced Address List are now available locally for a read-only test fixture. They do not provide the secured full MAD schema, structures, lookup tables, variants, QA results, authentication, or publishing environment. Demonstration cases and any public fixture must therefore remain clearly labeled.
 
 ## Product Principles
 

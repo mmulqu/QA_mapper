@@ -6,7 +6,7 @@ FIRST VIEWPORT: A permanent left case panel and one large Leaflet map; the attri
 FORM: Map-first feature explorer with progressive disclosure; no persistent evidence folio.
 */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Check,
   CheckCircle2,
@@ -20,8 +20,10 @@ import {
   X,
 } from 'lucide-react'
 import MapWorkspace from './components/MapWorkspace'
+import { MAP_SERVICES } from './config/mapServices'
 import { cases } from './data/cases'
 import { getFeatureRecords, relatedKeys } from './lib/featureRecords'
+import { getPublicMadRecords } from './lib/publicMadRecords'
 
 const featureIcons = {
   'address-point': MapPin,
@@ -34,11 +36,23 @@ const featureIcons = {
 }
 
 function FeatureIcon({ featureKey, size = 18 }) {
-  const Icon = featureKey.startsWith('nearby:') ? MapPin : featureIcons[featureKey] || Database
+  const Icon = featureKey.startsWith('nearby:') || featureKey.startsWith('public-address-point:')
+    ? MapPin
+    : featureKey.startsWith('public-advanced-address:')
+      ? FileText
+      : featureIcons[featureKey] || Database
   return <Icon size={size} aria-hidden="true" />
 }
 
-function CaseDocket({ activeCaseId, onSelectCase, collapsed, onToggle }) {
+function CaseDocket({
+  activeCaseId,
+  activeDataView,
+  onSelectCase,
+  onSelectPublicSnapshot,
+  publicSnapshot,
+  collapsed,
+  onToggle,
+}) {
   return (
     <aside className={collapsed ? 'case-docket is-collapsed' : 'case-docket'} aria-label="QA cases">
       <header className="docket-header">
@@ -53,8 +67,27 @@ function CaseDocket({ activeCaseId, onSelectCase, collapsed, onToggle }) {
       </header>
 
       <div className="docket-case-list">
+        {publicSnapshot && (
+          <div className="public-data-source">
+            <span>Loaded test data</span>
+            <button
+              type="button"
+              className={activeDataView === 'public' ? 'case-item public-data active' : 'case-item public-data'}
+              onClick={onSelectPublicSnapshot}
+              aria-current={activeDataView === 'public' ? 'page' : undefined}
+            >
+              <span className="case-dot public" />
+              <span className="case-item-copy">
+                <strong>Brookline MAD snapshot</strong>
+                <span>{publicSnapshot.metadata.fixturePointCount.toLocaleString()} public address points</span>
+                <small>Read-only · Basic Points ↔ Advanced List</small>
+              </span>
+              <ChevronRight size={18} />
+            </button>
+          </div>
+        )}
         {cases.map((caseItem) => {
-          const active = caseItem.id === activeCaseId
+          const active = activeDataView === 'cases' && caseItem.id === activeCaseId
           return (
             <button
               type="button"
@@ -77,7 +110,7 @@ function CaseDocket({ activeCaseId, onSelectCase, collapsed, onToggle }) {
 
       <footer className="docket-footer-simple">
         <CircleDot size={15} />
-        <span>Training workspace · vector export</span>
+        <span>{activeDataView === 'public' ? 'Public export · no edit actions' : 'Training workspace · vector export'}</span>
       </footer>
     </aside>
   )
@@ -167,20 +200,47 @@ export default function App() {
   const [selectedFeatureKey, setSelectedFeatureKey] = useState(null)
   const [docketCollapsed, setDocketCollapsed] = useState(false)
   const [visibleLayers, setVisibleLayers] = useState(['addresses', 'structures', 'parcels', 'roads'])
-  const [baseMap, setBaseMap] = useState('streets')
+  const [baseMap, setBaseMap] = useState(MAP_SERVICES.massgisBasemap.id)
   const [approvedCases, setApprovedCases] = useState([])
+  const [activeDataView, setActiveDataView] = useState('cases')
+  const [publicSnapshot, setPublicSnapshot] = useState(null)
+
+  useEffect(() => {
+    if (typeof globalThis.fetch !== 'function') return undefined
+    let cancelled = false
+
+    globalThis.fetch('/test-data/brookline-mad-snapshot.json')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((snapshot) => {
+        if (!cancelled && snapshot?.kind === 'public-mad-test-snapshot') setPublicSnapshot(snapshot)
+      })
+      .catch(() => {
+        // The public fixture is optional and is generated locally from a dated export.
+      })
+
+    return () => { cancelled = true }
+  }, [])
 
   const caseItem = useMemo(
     () => cases.find((item) => item.id === activeCaseId),
     [activeCaseId],
   )
   const records = useMemo(
-    () => getFeatureRecords(caseItem, caseItem.geometry.proposed),
-    [caseItem],
+    () => activeDataView === 'public'
+      ? getPublicMadRecords(publicSnapshot)
+      : getFeatureRecords(caseItem, caseItem.geometry.proposed),
+    [activeDataView, caseItem, publicSnapshot],
   )
 
   const selectCase = (caseId) => {
+    setActiveDataView('cases')
     setActiveCaseId(caseId)
+    setSelectedFeatureKey(null)
+    setDocketCollapsed(false)
+  }
+
+  const selectPublicSnapshot = () => {
+    setActiveDataView('public')
     setSelectedFeatureKey(null)
     setDocketCollapsed(false)
   }
@@ -190,7 +250,10 @@ export default function App() {
       <main className={docketCollapsed ? 'workbench docket-collapsed' : 'workbench'}>
         <CaseDocket
           activeCaseId={activeCaseId}
+          activeDataView={activeDataView}
           onSelectCase={selectCase}
+          onSelectPublicSnapshot={selectPublicSnapshot}
+          publicSnapshot={publicSnapshot}
           collapsed={docketCollapsed}
           onToggle={() => setDocketCollapsed((value) => !value)}
         />
@@ -212,6 +275,7 @@ export default function App() {
           setVisibleLayers={setVisibleLayers}
           baseMap={baseMap}
           setBaseMap={setBaseMap}
+          publicSnapshot={activeDataView === 'public' ? publicSnapshot : null}
         />
         {selectedFeatureKey && (
           <FeatureInspector

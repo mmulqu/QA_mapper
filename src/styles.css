@@ -104,6 +104,11 @@ button:focus-visible {
 
 .docket-case-list { min-height: 0; overflow-y: auto; }
 
+.public-data-source { background: #dce2df; border-bottom: 1px solid #b8c2c0; }
+.public-data-source > span { display: block; padding: 11px 20px 7px; color: #1d2b32; font-size: 12px; font-weight: 750; }
+.public-data-source .case-item { background: #f7f8f5; }
+.public-data-source .case-item:hover { background: #e9edeb; }
+
 .case-item {
   position: relative;
   width: 100%;
@@ -131,6 +136,7 @@ button:focus-visible {
   border-radius: 50%;
 }
 .case-dot.hold { background: #8b620e; }
+.case-dot.public { background: #174d6d; }
 
 .case-item-copy { min-width: 0; display: grid; gap: 4px; }
 .case-item-copy strong { color: #152a38; font-size: 16px; line-height: 1.2; }

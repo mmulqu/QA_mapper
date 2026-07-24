@@ -4,3 +4,5 @@ coverage/
 .vite-server.log
 .vite-server.error.log
 .DS_Store
+.data/
+public/test-data/*.json

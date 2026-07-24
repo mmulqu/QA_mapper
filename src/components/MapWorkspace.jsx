@@ -10,6 +10,7 @@ import {
   useMap,
 } from 'react-leaflet'
 import { Image, Layers3, Map as MapIcon, Minus, Plus, Route } from 'lucide-react'
+import { MAP_SERVICES } from '../config/mapServices'
 
 function MapSync({ caseItem }) {
   const map = useMap()
@@ -41,7 +42,26 @@ function MapZoomControls() {
   )
 }
 
-function LayerPicker({ visibleLayers, setVisibleLayers, baseMap, setBaseMap }) {
+const defaultVectorLayers = [
+  ['addresses', 'Address points'],
+  ['structures', 'Structures'],
+  ['parcels', 'Parcels'],
+  ['roads', 'Roads'],
+]
+
+function activeMapService(baseMap) {
+  return baseMap === MAP_SERVICES.massgis2025Imagery.id
+    ? MAP_SERVICES.massgis2025Imagery
+    : MAP_SERVICES.massgisBasemap
+}
+
+function LayerPicker({
+  visibleLayers,
+  setVisibleLayers,
+  baseMap,
+  setBaseMap,
+  vectorLayers = defaultVectorLayers,
+}) {
   const [open, setOpen] = useState(false)
   const toggle = (layer) => {
     setVisibleLayers((current) =>
@@ -67,28 +87,23 @@ function LayerPicker({ visibleLayers, setVisibleLayers, baseMap, setBaseMap }) {
           <div className="basemap-buttons" role="group" aria-label="Basemap">
             <button
               type="button"
-              className={baseMap === 'streets' ? 'active' : ''}
-              onClick={() => setBaseMap('streets')}
-              aria-pressed={baseMap === 'streets'}
+              className={baseMap === MAP_SERVICES.massgisBasemap.id ? 'active' : ''}
+              onClick={() => setBaseMap(MAP_SERVICES.massgisBasemap.id)}
+              aria-pressed={baseMap === MAP_SERVICES.massgisBasemap.id}
             >
-              <MapIcon size={15} /> Streets
+              <MapIcon size={15} /> {MAP_SERVICES.massgisBasemap.shortLabel}
             </button>
             <button
               type="button"
-              className={baseMap === 'imagery' ? 'active' : ''}
-              onClick={() => setBaseMap('imagery')}
-              aria-pressed={baseMap === 'imagery'}
+              className={baseMap === MAP_SERVICES.massgis2025Imagery.id ? 'active' : ''}
+              onClick={() => setBaseMap(MAP_SERVICES.massgis2025Imagery.id)}
+              aria-pressed={baseMap === MAP_SERVICES.massgis2025Imagery.id}
             >
-              <Image size={15} /> Imagery
+              <Image size={15} /> {MAP_SERVICES.massgis2025Imagery.shortLabel}
             </button>
           </div>
           <span className="layer-popover-heading">Vectors</span>
-          {[
-            ['addresses', 'Address points'],
-            ['structures', 'Structures'],
-            ['parcels', 'Parcels'],
-            ['roads', 'Roads'],
-          ].map(([key, label]) => (
+          {vectorLayers.map(([key, label]) => (
             <label key={key} className="layer-option">
               <input
                 type="checkbox"
@@ -101,6 +116,89 @@ function LayerPicker({ visibleLayers, setVisibleLayers, baseMap, setBaseMap }) {
         </div>
       )}
     </div>
+  )
+}
+
+function PublicMadMapSync({ snapshot }) {
+  const map = useMap()
+
+  useEffect(() => {
+    if (!snapshot.features.length) return
+    const bounds = L.latLngBounds(snapshot.features.map((feature) => feature.position))
+    map.fitBounds(bounds, { padding: [56, 56], maxZoom: snapshot.zoom })
+  }, [map, snapshot])
+
+  return null
+}
+
+function PublicMadWorkspace({
+  snapshot,
+  selectedFeatureKey,
+  onSelectFeature,
+  visibleLayers,
+  setVisibleLayers,
+  baseMap,
+  setBaseMap,
+}) {
+  const activeBaseMap = activeMapService(baseMap)
+
+  return (
+    <section className="map-workspace" aria-label="Public Brookline MAD test snapshot">
+      <MapContainer
+        center={snapshot.center}
+        zoom={snapshot.zoom}
+        zoomControl={false}
+        className="map-canvas"
+        preferCanvas
+      >
+        <TileLayer
+          attribution={activeBaseMap.attribution}
+          maxNativeZoom={activeBaseMap.maxNativeZoom}
+          url={activeBaseMap.url}
+        />
+        <PublicMadMapSync snapshot={snapshot} />
+        <MapZoomControls />
+
+        {visibleLayers.includes('addresses') && snapshot.features.map((feature) => {
+          const selected = selectedFeatureKey === feature.key
+          return (
+            <CircleMarker
+              key={feature.key}
+              center={feature.position}
+              radius={selected ? 8 : 5}
+              pathOptions={{
+                color: selected ? '#0d638f' : '#174d6d',
+                weight: selected ? 3 : 1.5,
+                fillColor: '#f7f8f5',
+                fillOpacity: 0.94,
+              }}
+              eventHandlers={{ click: () => onSelectFeature(feature.key) }}
+            >
+              <Tooltip direction="top" offset={[0, -6]}>
+                {feature.address} · {feature.attributes.POINT_TYPE} · click for attributes
+              </Tooltip>
+            </CircleMarker>
+          )
+        })}
+      </MapContainer>
+
+      <div className="map-case-label">
+        <span className="map-case-id">PUBLIC MAD TEST SNAPSHOT</span>
+        <strong>Brookline address points</strong>
+        <span>{snapshot.metadata.fixturePointCount.toLocaleString()} points · read-only export</span>
+      </div>
+      <LayerPicker
+        visibleLayers={visibleLayers}
+        setVisibleLayers={setVisibleLayers}
+        baseMap={baseMap}
+        setBaseMap={setBaseMap}
+        vectorLayers={[["addresses", "Basic address points"]]}
+      />
+      <div className="map-legend" aria-label="Public MAD map legend">
+        <span><i className="legend-dot other" /> Basic address point</span>
+        <span>{snapshot.metadata.advancedJoinCount.toLocaleString()} related Advanced Address records</span>
+      </div>
+    </section>
   )
 }
 
@@ -118,7 +216,22 @@ export default function MapWorkspace({
   setVisibleLayers,
   baseMap,
   setBaseMap,
+  publicSnapshot,
 }) {
+  if (publicSnapshot) {
+    return (
+      <PublicMadWorkspace
+        snapshot={publicSnapshot}
+        selectedFeatureKey={selectedFeatureKey}
+        onSelectFeature={onSelectFeature}
+        visibleLayers={visibleLayers}
+        setVisibleLayers={setVisibleLayers}
+        baseMap={baseMap}
+        setBaseMap={setBaseMap}
+      />
+    )
+  }
+
   const selectedTarget = selectedFeatureKey?.startsWith('nearby:')
     ? selectedFeatureKey
     : selectedFeatureKey === 'master-address' || selectedFeatureKey === 'address-variant'
@@ -129,6 +242,7 @@ export default function MapWorkspace({
 
   const addressSelected = selectedTarget === 'address-point'
   const proposedPoint = caseItem.geometry.proposed
+  const activeBaseMap = activeMapService(baseMap)
 
   return (
     <section className="map-workspace" aria-label={`Vector map for ${caseItem.address}`}>
@@ -139,17 +253,11 @@ export default function MapWorkspace({
         className="map-canvas"
         preferCanvas
       >
-        {baseMap === 'streets' ? (
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
-        ) : (
-          <TileLayer
-            attribution="Tiles &copy; Esri"
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-          />
-        )}
+        <TileLayer
+          attribution={activeBaseMap.attribution}
+          maxNativeZoom={activeBaseMap.maxNativeZoom}
+          url={activeBaseMap.url}
+        />
 
         <MapSync caseItem={caseItem} />
         <MapZoomControls />
@@ -158,7 +266,7 @@ export default function MapWorkspace({
           <Polygon
             positions={caseItem.geometry.parcel}
             pathOptions={featureStyle(selectedTarget === 'parcel', {
-              color: '#497a92',
+              color: '#b8c2c0',
               weight: 2,
               dashArray: '7 5',
               fillColor: '#7ab1cf',
@@ -174,10 +282,10 @@ export default function MapWorkspace({
           <Polygon
             positions={caseItem.geometry.structure}
             pathOptions={featureStyle(selectedTarget === 'structure', {
-              color: '#324b59',
+              color: '#0e2433',
               weight: 2,
               fillColor: '#6f8792',
-              fillOpacity: baseMap === 'imagery' ? 0.28 : 0.18,
+              fillOpacity: baseMap === MAP_SERVICES.massgis2025Imagery.id ? 0.28 : 0.18,
             })}
             eventHandlers={{ click: () => onSelectFeature('structure') }}
           >
@@ -189,7 +297,7 @@ export default function MapWorkspace({
           <Polyline
             positions={caseItem.geometry.road}
             pathOptions={featureStyle(selectedTarget === 'road', {
-              color: '#707b80',
+              color: '#1d2b32',
               weight: 5,
               opacity: 0.75,
             })}

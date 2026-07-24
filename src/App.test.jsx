@@ -5,14 +5,33 @@ import userEvent from '@testing-library/user-event'
 import App from './App'
 
 vi.mock('./components/MapWorkspace', () => ({
-  default: ({ caseItem, onSelectFeature }) => (
+  default: ({ caseItem, onSelectFeature, publicSnapshot }) => (
     <section data-testid="map-workspace">
-      Leaflet workspace for {caseItem.address}
-      <button type="button" onClick={() => onSelectFeature('address-point')}>Open address point</button>
-      <button type="button" onClick={() => onSelectFeature('structure')}>Open structure</button>
+      {publicSnapshot ? 'Public MAD workspace for Brookline' : `Leaflet workspace for ${caseItem.address}`}
+      <button
+        type="button"
+        onClick={() => onSelectFeature(publicSnapshot ? 'public-address-point:3315676' : 'address-point')}
+      >
+        {publicSnapshot ? 'Open public address point' : 'Open address point'}
+      </button>
+      {!publicSnapshot && <button type="button" onClick={() => onSelectFeature('structure')}>Open structure</button>}
     </section>
   ),
 }))
+
+const publicMadSnapshot = {
+  kind: 'public-mad-test-snapshot',
+  metadata: { fixturePointCount: 1, advancedJoinCount: 1 },
+  features: [
+    {
+      key: 'public-address-point:3315676',
+      id: 'M_230601_899373',
+      addressId: 3315676,
+      attributes: { ADDR_PT_ID: 'M_230601_899373', ADDRESS_ID: 3315676, POINT_TYPE: 'BC' },
+      advancedAddress: { ADDRESS_ID: 3315676, ADDRESS: '12 FULLER STREET', STATUS: 'ACTIVE' },
+    },
+  ],
+}
 
 describe('MAD QA feature explorer', () => {
   beforeEach(() => {
@@ -22,6 +41,7 @@ describe('MAD QA feature explorer', () => {
   afterEach(() => {
     cleanup()
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   it('opens on the map and keeps the case list visible without a dense inspector', () => {
@@ -65,6 +85,23 @@ describe('MAD QA feature explorer', () => {
     await user.click(screen.getByRole('button', { name: 'Open address point' }))
 
     expect(screen.getByText('No edit proposal')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Accept proposed change' })).not.toBeInTheDocument()
+  })
+
+  it('loads the optional public MAD fixture as a no-edit map view with an ADDRESS_ID relate', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => publicMadSnapshot,
+    }))
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: /Brookline MAD snapshot/ }))
+    expect(screen.getByText('Public MAD workspace for Brookline')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Open public address point' }))
+    expect(screen.getByText('ADDR_PT_ID')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Advanced address record 3315676/ })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Accept proposed change' })).not.toBeInTheDocument()
   })
 })
