@@ -9,7 +9,7 @@ import {
   Tooltip,
   useMap,
 } from 'react-leaflet'
-import { Image, Layers3, Map as MapIcon, Minus, Plus, Route } from 'lucide-react'
+import { GitCompareArrows, Image, Layers3, Map as MapIcon, Minus, Plus, Route } from 'lucide-react'
 import { MAP_SERVICES } from '../config/mapServices'
 
 function MapSync({ caseItem }) {
@@ -119,6 +119,18 @@ function LayerPicker({
   )
 }
 
+function ChangeDiffControl({ changeCount, onShowDiff }) {
+  return (
+    <div className="map-diff-control">
+      <button type="button" className="map-tool" onClick={onShowDiff}>
+        <GitCompareArrows size={18} />
+        Changes
+        <span className="map-diff-count">{changeCount}</span>
+      </button>
+    </div>
+  )
+}
+
 function PublicMadMapSync({ snapshot }) {
   const map = useMap()
 
@@ -217,6 +229,8 @@ export default function MapWorkspace({
   baseMap,
   setBaseMap,
   publicSnapshot,
+  changeCount,
+  onShowDiff,
 }) {
   if (publicSnapshot) {
     return (
@@ -382,6 +396,7 @@ export default function MapWorkspace({
         baseMap={baseMap}
         setBaseMap={setBaseMap}
       />
+      <ChangeDiffControl changeCount={changeCount} onShowDiff={onShowDiff} />
       <div className="map-legend" aria-label="Map legend">
         <span><i className="legend-dot current" /> Current</span>
         <span><i className="legend-dot proposed" /> Proposed</span>

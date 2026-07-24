@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event'
 import App from './App'
 
 vi.mock('./components/MapWorkspace', () => ({
-  default: ({ caseItem, onSelectFeature, publicSnapshot }) => (
+  default: ({ caseItem, onSelectFeature, onShowDiff, publicSnapshot }) => (
     <section data-testid="map-workspace">
       {publicSnapshot ? 'Public MAD workspace for Brookline' : `Leaflet workspace for ${caseItem.address}`}
       <button
@@ -15,6 +15,7 @@ vi.mock('./components/MapWorkspace', () => ({
         {publicSnapshot ? 'Open public address point' : 'Open address point'}
       </button>
       {!publicSnapshot && <button type="button" onClick={() => onSelectFeature('structure')}>Open structure</button>}
+      {!publicSnapshot && <button type="button" onClick={onShowDiff}>Show agent diff</button>}
     </section>
   ),
 }))
@@ -75,6 +76,57 @@ describe('MAD QA feature explorer', () => {
     await user.click(screen.getByRole('button', { name: 'Accept proposed change' }))
 
     expect(screen.getByText('Proposal accepted in training')).toBeInTheDocument()
+  })
+
+  it('shows every changed source and draft value in the agent diff', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'Show agent diff' }))
+
+    expect(screen.getByText('Agent proposed changes')).toBeInTheDocument()
+    expect(screen.getAllByText('Current')).toHaveLength(2)
+    expect(screen.getAllByText('Proposed')).toHaveLength(2)
+    expect(screen.getByText('Building centroid')).toBeInTheDocument()
+    expect(screen.getByText('Building entrance')).toBeInTheDocument()
+    expect(screen.getByText('Building centroid').closest('.diff-value')).toHaveClass('before')
+    expect(screen.getByText('Building entrance').closest('.diff-value')).toHaveClass('after')
+    expect(screen.queryByRole('button', { name: 'Accept proposed change' })).not.toBeInTheDocument()
+  })
+
+  it('renders a new address point as green additions without a fabricated red source', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: /8 Harbor Lane/ }))
+    await user.click(screen.getByRole('button', { name: 'Show agent diff' }))
+
+    expect(screen.getAllByText('new-point-1').some((node) => node.closest('.diff-value')?.classList.contains('after'))).toBe(true)
+    expect(screen.getAllByText('New').length).toBeGreaterThan(1)
+    expect(screen.queryByText('Current')).not.toBeInTheDocument()
+  })
+
+  it('renders a blank prior relationship as an explicit red source value', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: /62 Alder Road/ }))
+    await user.click(screen.getByRole('button', { name: 'Show agent diff' }))
+
+    expect(screen.getByText((content, element) => (
+      element?.tagName === 'STRONG' && content.charCodeAt(0) === 8212
+    )).closest('.diff-value')).toHaveClass('before')
+    expect(screen.getByText('AP-884102').closest('.diff-value')).toHaveClass('after')
+  })
+
+  it('makes clear when an evidence-only case has no agent edits', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: /211 Union Street/ }))
+    await user.click(screen.getByRole('button', { name: 'Show agent diff' }))
+
+    expect(screen.getByText('No agent changes to review')).toBeInTheDocument()
   })
 
   it('withholds the approval action for a case awaiting municipal evidence', async () => {

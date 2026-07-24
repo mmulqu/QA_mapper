@@ -19,10 +19,12 @@ import {
   PanelLeftClose,
   X,
 } from 'lucide-react'
+import ChangeDiffInspector from './components/ChangeDiffInspector'
 import MapWorkspace from './components/MapWorkspace'
 import { MAP_SERVICES } from './config/mapServices'
 import { cases } from './data/cases'
 import { getFeatureRecords, relatedKeys } from './lib/featureRecords'
+import { countChangedFields, getCaseChanges } from './lib/changeDiff'
 import { getPublicMadRecords } from './lib/publicMadRecords'
 
 const featureIcons = {
@@ -204,6 +206,7 @@ export default function App() {
   const [approvedCases, setApprovedCases] = useState([])
   const [activeDataView, setActiveDataView] = useState('cases')
   const [publicSnapshot, setPublicSnapshot] = useState(null)
+  const [showChangeDiff, setShowChangeDiff] = useState(false)
 
   useEffect(() => {
     if (typeof globalThis.fetch !== 'function') return undefined
@@ -231,17 +234,28 @@ export default function App() {
       : getFeatureRecords(caseItem, caseItem.geometry.proposed),
     [activeDataView, caseItem, publicSnapshot],
   )
+  const changeCount = useMemo(
+    () => countChangedFields(getCaseChanges(caseItem)),
+    [caseItem],
+  )
+
+  const selectFeature = (featureKey) => {
+    setShowChangeDiff(false)
+    setSelectedFeatureKey(featureKey)
+  }
 
   const selectCase = (caseId) => {
     setActiveDataView('cases')
     setActiveCaseId(caseId)
     setSelectedFeatureKey(null)
+    setShowChangeDiff(false)
     setDocketCollapsed(false)
   }
 
   const selectPublicSnapshot = () => {
     setActiveDataView('public')
     setSelectedFeatureKey(null)
+    setShowChangeDiff(false)
     setDocketCollapsed(false)
   }
 
@@ -270,22 +284,34 @@ export default function App() {
         <MapWorkspace
           caseItem={caseItem}
           selectedFeatureKey={selectedFeatureKey}
-          onSelectFeature={setSelectedFeatureKey}
+          onSelectFeature={selectFeature}
           visibleLayers={visibleLayers}
           setVisibleLayers={setVisibleLayers}
           baseMap={baseMap}
           setBaseMap={setBaseMap}
           publicSnapshot={activeDataView === 'public' ? publicSnapshot : null}
+          changeCount={changeCount}
+          onShowDiff={() => {
+            setSelectedFeatureKey(null)
+            setShowChangeDiff(true)
+          }}
         />
         {selectedFeatureKey && (
           <FeatureInspector
             caseItem={caseItem}
             records={records}
             featureKey={selectedFeatureKey}
-            onSelectFeature={setSelectedFeatureKey}
+            onSelectFeature={selectFeature}
             onClose={() => setSelectedFeatureKey(null)}
             approved={approvedCases.includes(activeCaseId)}
             onApprove={() => setApprovedCases((current) => [...new Set([...current, activeCaseId])])}
+          />
+        )}
+        {showChangeDiff && activeDataView === 'cases' && !selectedFeatureKey && (
+          <ChangeDiffInspector
+            caseItem={caseItem}
+            onClose={() => setShowChangeDiff(false)}
+            onSelectFeature={selectFeature}
           />
         )}
       </main>

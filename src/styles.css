@@ -219,6 +219,10 @@ button:focus-visible {
 .map-case-label span:last-child { color: #526167; font-size: 14px; }
 
 .map-layer-picker { position: absolute; z-index: 810; top: 18px; right: 18px; }
+.map-diff-control { position: absolute; z-index: 810; top: 70px; right: 18px; }
+.map-diff-control .map-tool { min-width: 136px; justify-content: space-between; }
+.map-diff-count { min-width: 22px; height: 22px; padding: 0 5px; color: #f7f8f5; background: #174d6d; display: grid; place-items: center; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; }
+.map-diff-control .map-tool:hover .map-diff-count { color: #174d6d; background: #f7f8f5; }
 
 .map-tool {
   height: 44px;
@@ -341,6 +345,67 @@ button:focus-visible {
 .action-hold strong { color: #704f0c; font-size: 15px; }
 .action-hold span { color: #705c2d; font-size: 13px; line-height: 1.4; }
 
+/* Agent change diff */
+.change-diff-inspector {
+  position: absolute;
+  z-index: 950;
+  top: 18px;
+  right: 18px;
+  bottom: 18px;
+  width: min(520px, calc(100vw - 360px));
+  min-width: 370px;
+  color: #1d2b32;
+  background: #fbfdfc;
+  border: 1px solid #879b99;
+  box-shadow: 9px 12px 30px rgba(14, 34, 43, 0.26);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  animation: inspector-in 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.diff-header {
+  min-height: 92px;
+  padding: 17px;
+  color: #edf6f6;
+  background: #173b50;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 11px;
+}
+
+.diff-header-icon { width: 42px; height: 42px; color: #d7ecf1; border: 1px solid #7da1b0; display: grid; place-items: center; }
+.diff-header > div { min-width: 0; }
+.diff-header > div > span { display: block; color: #bad1d8; font-size: 13px; }
+.diff-header h2 { margin: 3px 0 0; color: #fff; font-size: 19px; line-height: 1.15; }
+.diff-scroll-region { min-height: 0; overflow-y: auto; }
+.diff-intro { margin: 0; padding: 16px 20px; color: #43585f; background: #edf3f1; border-bottom: 1px solid #b8c6c3; font-size: 14px; line-height: 1.45; }
+.diff-change { padding: 19px 20px 17px; border-bottom: 1px solid #bdc9c6; }
+.diff-change-header { padding-bottom: 14px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.diff-entity { color: #174d6d; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 750; }
+.diff-change h3 { margin: 5px 0 3px; color: #0e2433; font-family: "Cascadia Code", Consolas, monospace; font-size: 16px; line-height: 1.15; }
+.diff-change p { margin: 0; color: #526167; font-size: 14px; line-height: 1.35; }
+.diff-new-badge { padding-top: 3px; color: #287044; display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 800; }
+.diff-field-list { border-top: 1px solid #bdc9c6; }
+.diff-field { padding: 13px 0; border-bottom: 1px solid #d3ddda; }
+.diff-field:last-child { border-bottom: 0; }
+.diff-field-name { display: block; margin-bottom: 8px; color: #50646b; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; font-weight: 750; overflow-wrap: anywhere; }
+.diff-value-pair { display: grid; grid-template-columns: minmax(0, 1fr) 20px minmax(0, 1fr); align-items: center; gap: 7px; }
+.diff-change.is-new .diff-value-pair { grid-template-columns: minmax(0, 1fr); }
+.diff-value { min-width: 0; min-height: 58px; padding: 8px 9px; border: 1px solid; display: grid; align-content: start; gap: 3px; }
+.diff-value span { font-size: 11px; font-weight: 750; }
+.diff-value strong { font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
+.diff-value.before { color: #b63d31; border-color: #b63d31; background: color-mix(in srgb, #b63d31 8%, #f7f8f5); }
+.diff-value.after { color: #287044; border-color: #287044; background: color-mix(in srgb, #287044 9%, #f7f8f5); }
+.diff-arrow { color: #526167; justify-self: center; }
+.diff-inspect-link { min-height: 34px; margin-top: 14px; padding: 0; color: #174d6d; background: transparent; border: 0; display: inline-flex; align-items: center; gap: 4px; font-size: 14px; font-weight: 750; }
+.diff-inspect-link:hover { color: #0d638f; text-decoration: underline; }
+.diff-empty-state { min-height: 0; padding: 36px 28px; color: #43585f; display: grid; align-content: center; justify-items: start; gap: 10px; }
+.diff-empty-state svg { color: #8b620e; }
+.diff-empty-state strong { color: #1d2b32; font-size: 17px; }
+.diff-empty-state span { max-width: 34ch; font-size: 14px; line-height: 1.5; }
+
 @keyframes inspector-in {
   from { opacity: 0; transform: translateX(18px); }
 }
@@ -355,6 +420,7 @@ button:focus-visible {
   .docket-header { min-height: 116px; padding: 23px 17px; }
   .docket-header h1 { font-size: 27px; }
   .feature-inspector { width: min(390px, calc(100vw - 278px)); min-width: 300px; top: 12px; right: 12px; bottom: 12px; }
+  .change-diff-inspector { width: min(460px, calc(100vw - 278px)); min-width: 320px; top: 12px; right: 12px; bottom: 12px; }
   .map-case-label { min-width: 230px; }
   .map-legend { gap: 9px; font-size: 12px; }
 }
@@ -369,10 +435,15 @@ button:focus-visible {
   .map-case-label strong { font-size: 18px; }
   .map-zoom-controls { top: 169px; left: 13px; }
   .map-layer-picker { top: 13px; right: 13px; }
+  .map-diff-control { top: 65px; right: 13px; }
+  .map-diff-control .map-tool { width: auto; min-width: 44px; padding: 0 12px; font-size: 13px; }
   .map-tool { width: 44px; padding: 0; justify-content: center; font-size: 0; }
   .layer-popover { width: 210px; }
   .map-legend { left: 13px; right: 13px; bottom: 24px; justify-content: center; flex-wrap: wrap; }
   .feature-inspector { position: fixed; top: auto; right: 0; bottom: 0; left: 0; width: 100%; min-width: 0; max-height: min(74vh, 640px); border: 1px solid #879b99; }
+  .change-diff-inspector { position: fixed; top: auto; right: 0; bottom: 0; left: 0; width: 100%; min-width: 0; max-height: min(78vh, 700px); }
+  .diff-value-pair { grid-template-columns: minmax(0, 1fr); }
+  .diff-arrow { transform: rotate(90deg); }
   .attribute-table dt { font-size: 11px; }
   .attribute-table dd { font-size: 14px; }
 }

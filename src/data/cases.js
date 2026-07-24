@@ -61,6 +61,28 @@ export const cases = [
         detail: 'Confirm existing structure relationship after move',
       },
     ],
+    changes: [
+      {
+        id: 'CHG-1',
+        entityLabel: 'Address point',
+        entityId: 'AP-100294',
+        mapTarget: 'address-point',
+        summary: 'Move point to the entrance',
+        fields: [
+          {
+            field: 'GEOMETRY',
+            type: 'geometry',
+            before: [42.26637, -71.80412],
+            after: [42.26618, -71.80366],
+          },
+          {
+            field: 'PLACEMENT_METHOD',
+            before: 'Building centroid',
+            after: 'Building entrance',
+          },
+        ],
+      },
+    ],
     evidence: [
       { source: 'MAD address points', date: '2026-07-22', detail: 'Current point and relationships', tone: 'blue' },
       { source: 'MassGIS structures', date: '2025-12-11', detail: 'Structure STR-44108 footprint', tone: 'blue' },
@@ -129,6 +151,27 @@ export const cases = [
         type: 'link_address_to_point',
         target: 'MA-612873 → AP-884102',
         detail: 'Create the missing Master Address relationship',
+      },
+    ],
+    changes: [
+      {
+        id: 'CHG-1',
+        entityLabel: 'Master Address',
+        entityId: 'MA-612873',
+        mapTarget: 'master-address',
+        summary: 'Link existing point',
+        fields: [
+          {
+            field: 'ADDRESS_POINT_ID',
+            before: null,
+            after: 'AP-884102',
+          },
+          {
+            field: 'STATUS',
+            before: 'UNLINKED',
+            after: 'ACTIVE',
+          },
+        ],
       },
     ],
     evidence: [
@@ -210,6 +253,49 @@ export const cases = [
         type: 'link_point_to_structure',
         target: 'new-point-1 → STR-55203',
         detail: 'Link the new point to its structure',
+      },
+    ],
+    changes: [
+      {
+        id: 'CHG-1',
+        entityLabel: 'Address point',
+        entityId: 'new-point-1',
+        mapTarget: 'address-point',
+        summary: 'Create and link a new point',
+        isNew: true,
+        fields: [
+          {
+            field: 'ADDRESS_POINT_ID',
+            before: null,
+            after: 'new-point-1',
+          },
+          {
+            field: 'FULL_ADDRESS',
+            before: null,
+            after: '8 HARBOR LANE, GLOUCESTER, MA',
+          },
+          {
+            field: 'GEOMETRY',
+            type: 'geometry',
+            before: null,
+            after: [42.6157, -70.66105],
+          },
+          {
+            field: 'PLACEMENT_METHOD',
+            before: null,
+            after: 'Driveway entrance',
+          },
+          {
+            field: 'MASTER_ADDRESS_ID',
+            before: null,
+            after: 'MA-883001',
+          },
+          {
+            field: 'STRUCTURE_ID',
+            before: null,
+            after: 'STR-55203',
+          },
+        ],
       },
     ],
     evidence: [

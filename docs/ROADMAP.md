@@ -9,6 +9,7 @@ This is the running implementation record for the workbench. Check off a gate on
 - [x] Leaflet review workspace with a persistent case list, vector feature selection, readable attribute tables, and preset record relates.
 - [x] Safe synthetic case snapshots that demonstrate the address point, Master Address, structure, structure lookup, variant, parcel, and road relationships.
 - [x] Local-only approval simulation and declarative changeset schema.
+- [x] On-demand agent change sheet: every existing source value is red, every draft value is green, and new address records are green-only.
 - [x] Public MassGIS basemap and 2025 natural-color imagery tile services in Leaflet.
 - [ ] Replace the synthetic case source with a server-backed case API.
 
