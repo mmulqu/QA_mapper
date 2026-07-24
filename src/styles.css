@@ -297,7 +297,7 @@ button:focus-visible {
   border: 1px solid #879b99;
   box-shadow: 9px 12px 30px rgba(14, 34, 43, 0.26);
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
   animation: inspector-in 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
@@ -339,14 +339,6 @@ button:focus-visible {
 .relation-list strong { font-size: 14px; }
 .relation-list small { color: #53686e; font-family: "Cascadia Code", Consolas, monospace; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.proposal-action { padding: 16px 20px 19px; background: #f9fbfa; border-top: 1px solid #b8c6c3; }
-.approve-button { width: 100%; min-height: 48px; color: #fff; background: #287044; border: 1px solid #1b5933; display: flex; align-items: center; justify-content: center; gap: 9px; font-size: 15px; font-weight: 750; }
-.approve-button:hover { background: #1e6239; }
-.action-approved { min-height: 48px; color: #18552f; background: #e3f0e6; border: 1px solid #80a98b; display: flex; align-items: center; justify-content: center; gap: 9px; font-size: 14px; font-weight: 750; }
-.action-hold { padding: 3px 0; display: grid; gap: 4px; }
-.action-hold strong { color: #704f0c; font-size: 15px; }
-.action-hold span { color: #705c2d; font-size: 13px; line-height: 1.4; }
-
 /* Agent change diff */
 .change-diff-inspector {
   position: absolute;
@@ -361,7 +353,7 @@ button:focus-visible {
   border: 1px solid #879b99;
   box-shadow: 9px 12px 30px rgba(14, 34, 43, 0.26);
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
   animation: inspector-in 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
@@ -383,6 +375,23 @@ button:focus-visible {
 .diff-header h2 { margin: 3px 0 0; color: #fff; font-size: 19px; line-height: 1.15; }
 .diff-scroll-region { min-height: 0; overflow-y: auto; }
 .diff-intro { margin: 0; padding: 16px 20px; color: #43585f; background: #edf3f1; border-bottom: 1px solid #b8c6c3; font-size: 14px; line-height: 1.45; }
+.proposal-lineage { padding: 15px 20px 4px; background: #f7faf8; border-bottom: 1px solid #bdc9c6; }
+.proposal-lineage > header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.proposal-lineage > header > span { color: #174d6d; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 800; }
+.proposal-lineage > header > small { color: #52666d; font-size: 12px; }
+.current-proposal-id, .proposal-lineage-empty { margin: 9px 0 11px; color: #43585f; font-size: 12px; line-height: 1.35; }
+.current-proposal-id code, .proposal-lineage code { color: #153b4f; font-family: "Cascadia Code", Consolas, monospace; font-size: 11px; overflow-wrap: anywhere; }
+.proposal-lineage ol { margin: 10px 0 0; padding: 0; list-style: none; border-top: 1px solid #c9d4d0; }
+.proposal-lineage li { padding: 10px 0 11px; border-bottom: 1px solid #d6dfdc; }
+.proposal-lineage li:last-child { border-bottom: 0; }
+.proposal-lineage-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.proposal-status { padding: 2px 5px; border: 1px solid; font-size: 11px; font-weight: 800; text-transform: capitalize; }
+.proposal-status.staged { color: #174d6d; background: #eaf2f4; border-color: #87a7b0; }
+.proposal-status.rejected { color: #8f392e; background: #fff0ed; border-color: #c58a82; }
+.proposal-status.accepted { color: #18552f; background: #e4f1e6; border-color: #80a98b; }
+.proposal-lineage li > span { display: block; margin-top: 5px; color: #52666d; font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
+.proposal-lineage li > p { margin: 5px 0 0; color: #263b44; font-size: 13px; line-height: 1.4; }
+.proposal-lineage blockquote { margin: 8px 0 0; padding: 7px 9px; color: #7a4033; background: #fff4f1; border: 1px solid #d5a79f; font-size: 12px; line-height: 1.35; }
 .diff-change { padding: 19px 20px 17px; border-bottom: 1px solid #bdc9c6; }
 .diff-change-header { padding-bottom: 14px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .diff-entity { color: #174d6d; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 750; }
@@ -407,6 +416,22 @@ button:focus-visible {
 .diff-empty-state svg { color: #8b620e; }
 .diff-empty-state strong { color: #1d2b32; font-size: 17px; }
 .diff-empty-state span { max-width: 34ch; font-size: 14px; line-height: 1.5; }
+.diff-decision-bar { padding: 14px 18px 16px; background: #eef4f1; border-top: 1px solid #aebfba; display: grid; gap: 10px; }
+.diff-decision-bar > p { margin: 0; color: #40565e; font-size: 12px; line-height: 1.4; }
+.diff-decision-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.12fr); gap: 9px; }
+.diff-decision-actions button { min-height: 44px; padding: 8px 10px; border: 1px solid; display: inline-flex; align-items: center; justify-content: center; gap: 7px; font-size: 13px; font-weight: 800; line-height: 1.25; }
+.diff-decision-actions button:disabled { cursor: wait; opacity: 0.62; }
+.diff-reject-button { color: #8f392e; background: #fffafa; border-color: #b86d64 !important; }
+.diff-reject-button:hover:not(:disabled) { color: #fff; background: #a33b30; border-color: #a33b30 !important; }
+.diff-accept-button { color: #fff; background: #287044; border-color: #1b5933 !important; }
+.diff-accept-button:hover:not(:disabled) { background: #1e6239; }
+.diff-decision-error { padding: 9px 10px; color: #8a3027; background: #f9e8e5; border: 1px solid #bd6a60; font-size: 13px; line-height: 1.35; }
+.diff-decision-message { min-height: 53px; padding: 9px 10px; display: flex; align-items: center; gap: 9px; border: 1px solid; }
+.diff-decision-message > span { display: grid; gap: 3px; }
+.diff-decision-message strong { font-size: 14px; }
+.diff-decision-message small { font-size: 12px; line-height: 1.35; }
+.diff-decision-message.accepted { color: #18552f; background: #e2f0e5; border-color: #80a98b; }
+.diff-decision-message.rejected { color: #815139; background: #fcf1e9; border-color: #c29272; }
 
 /* Local case agent */
 .agent-panel {
@@ -445,6 +470,10 @@ button:focus-visible {
 .agent-scroll-region { min-height: 0; overflow-y: auto; }
 .agent-scope-note { min-height: 58px; margin: 0; padding: 13px 18px; color: #43585f; background: #edf3f1; border-bottom: 1px solid #b8c6c3; display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 1.35; }
 .agent-scope-note svg { flex: 0 0 auto; color: #174d6d; }
+.agent-review-feedback { margin: 15px 18px 0; padding: 12px 13px; color: #704f0c; background: #fff6df; border: 1px solid #c6a560; display: grid; gap: 5px; }
+.agent-review-feedback strong { font-size: 13px; }
+.agent-review-feedback p { margin: 0; color: #3e3320; font-size: 14px; line-height: 1.4; }
+.agent-review-feedback small { color: #705c2d; font-size: 12px; line-height: 1.35; }
 .agent-starters { padding: 22px 20px; display: grid; gap: 10px; }
 .agent-starters strong { margin-bottom: 2px; color: #233842; font-size: 16px; }
 .agent-starters button { min-height: 48px; padding: 10px 13px; color: #174d6d; background: #f6faf8; border: 1px solid #aac0b9; text-align: left; font-size: 14px; font-weight: 700; line-height: 1.3; }
@@ -494,6 +523,31 @@ button:focus-visible {
 .agent-composer button:disabled { cursor: not-allowed; opacity: 0.55; }
 .agent-review-draft { min-height: 49px; color: #fff; background: #287044; border: 0; border-top: 1px solid #1b5933; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; font-weight: 800; }
 .agent-review-draft:hover { background: #1e6239; }
+
+/* Rejection feedback dialog */
+.review-reject-backdrop { position: fixed; z-index: 2000; inset: 0; padding: 22px; background: rgba(12, 30, 40, 0.52); display: grid; place-items: center; }
+.review-reject-dialog { width: min(520px, 100%); color: #1d2b32; background: #fbfdfc; border: 1px solid #80928f; box-shadow: 11px 16px 38px rgba(8, 24, 33, 0.34); }
+.review-reject-dialog > header { min-height: 78px; padding: 15px 16px; color: #edf6f6; background: #173b50; display: grid; grid-template-columns: 42px minmax(0, 1fr) 34px; align-items: center; gap: 10px; }
+.review-reject-icon { width: 38px; height: 38px; color: #ffddb5; border: 1px solid #a27a4d; display: grid; place-items: center; }
+.review-reject-dialog header > div { min-width: 0; }
+.review-reject-dialog header span:not(.review-reject-icon) { display: block; color: #bad1d8; font-size: 12px; }
+.review-reject-dialog h2 { margin: 3px 0 0; color: #fff; font-size: 18px; line-height: 1.15; }
+.review-reject-close { width: 34px; height: 34px; color: #eff7f8; background: transparent; border: 1px solid #7190a0; display: grid; place-items: center; }
+.review-reject-close:hover:not(:disabled) { background: #285b74; }
+.review-reject-dialog form { padding: 18px; display: grid; gap: 9px; }
+.review-reject-dialog form > p { margin: 0 0 5px; color: #40565e; font-size: 14px; line-height: 1.45; }
+.review-reject-dialog label { color: #233842; font-size: 13px; font-weight: 800; }
+.review-reject-dialog textarea { width: 100%; min-height: 118px; resize: vertical; padding: 10px 11px; color: #172b35; background: #fff; border: 1px solid #829995; font: inherit; font-size: 14px; line-height: 1.4; }
+.review-reject-dialog textarea::placeholder { color: #65767a; }
+.review-reject-count { margin-top: -4px; color: #566a70; justify-self: end; font-size: 12px; }
+.review-reject-error { padding: 9px 10px; color: #8a3027; background: #f9e8e5; border: 1px solid #bd6a60; font-size: 13px; line-height: 1.35; }
+.review-reject-dialog footer { margin-top: 4px; display: flex; justify-content: flex-end; gap: 9px; }
+.review-reject-dialog footer button { min-height: 42px; padding: 0 13px; border: 1px solid; font-size: 13px; font-weight: 800; }
+.review-cancel { color: #334b54; background: #fff; border-color: #829995 !important; }
+.review-cancel:hover:not(:disabled) { background: #edf3f1; }
+.review-reject-submit { color: #fff; background: #a33b30; border-color: #873027 !important; }
+.review-reject-submit:hover:not(:disabled) { background: #8e3027; }
+.review-reject-dialog button:disabled { cursor: wait; opacity: 0.6; }
 
 @keyframes inspector-in {
   from { opacity: 0; transform: translateX(18px); }

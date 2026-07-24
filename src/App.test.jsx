@@ -69,14 +69,16 @@ describe('MAD QA feature explorer', () => {
     expect(screen.getAllByText('MA-778452').length).toBeGreaterThan(0)
   })
 
-  it('keeps the one approval action inside the selected address point', async () => {
+  it('keeps acceptance in the complete red-and-green review sheet, not an attribute table', async () => {
     const user = userEvent.setup()
     render(<App />)
 
     await user.click(screen.getByRole('button', { name: 'Open address point' }))
-    await user.click(screen.getByRole('button', { name: 'Accept proposed change' }))
+    expect(screen.queryByRole('button', { name: 'Accept and send to publisher' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Show agent diff' }))
 
-    expect(screen.getByText('Proposal accepted in training')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Accept and send to publisher' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reject and add feedback' })).toBeInTheDocument()
   })
 
   it('shows every changed source and draft value in the agent diff', async () => {
@@ -93,6 +95,40 @@ describe('MAD QA feature explorer', () => {
     expect(screen.getByText('Building centroid').closest('.diff-value')).toHaveClass('before')
     expect(screen.getByText('Building entrance').closest('.diff-value')).toHaveClass('after')
     expect(screen.queryByRole('button', { name: 'Accept proposed change' })).not.toBeInTheDocument()
+  })
+
+  it('shows parent and revised proposal IDs, summaries, and model IDs in the diff lineage', async () => {
+    vi.stubGlobal('fetch', vi.fn((url) => {
+      if (url === '/test-data/brookline-mad-snapshot.json') return Promise.resolve({ ok: false })
+      if (url === '/api/cases/MAD-2026-1842/proposals') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            proposals: [
+              {
+                id: 'proposal-parent', depth: 0, status: 'rejected', category: 'Address point movement',
+                summary: 'Move to the east entrance.', reviewerFeedback: 'Use the driveway instead.', model: 'qwen3-4b-thinking-2507',
+              },
+              {
+                id: 'proposal-revision', depth: 1, status: 'staged', parentProposalId: 'proposal-parent', category: 'Address point movement',
+                summary: 'Move to the verified driveway access.', reviewerFeedback: '', model: 'qwen3-4b-thinking-2507',
+              },
+            ],
+          }),
+        })
+      }
+      return Promise.resolve({ ok: false, json: async () => ({}) })
+    }))
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'Show agent diff' }))
+
+    expect(await screen.findByText('Proposal lineage')).toBeInTheDocument()
+    expect(screen.getByText('proposal-parent')).toBeInTheDocument()
+    expect(screen.getAllByText('proposal-revision').length).toBe(2)
+    expect(screen.getByText(/Use the driveway instead/)).toBeInTheDocument()
+    expect(screen.getAllByText(/qwen3-4b-thinking-2507/).length).toBe(2)
   })
 
   it('renders a new address point as green additions without a fabricated red source', async () => {
@@ -128,6 +164,63 @@ describe('MAD QA feature explorer', () => {
     await user.click(screen.getByRole('button', { name: 'Show agent diff' }))
 
     expect(screen.getByText('No agent changes to review')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Accept and send to publisher' })).not.toBeInTheDocument()
+  })
+
+  it('sends an accepted draft to the protected publisher handoff and reports its status', async () => {
+    vi.stubGlobal('fetch', vi.fn((url) => {
+      if (url === '/test-data/brookline-mad-snapshot.json') return Promise.resolve({ ok: false })
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          publisher: {
+            status: 'validated-handoff',
+            productionApplied: false,
+            message: 'Publisher handoff is structurally valid. Validate mode made no MAD edit.',
+          },
+          job: { id: 'pub-test', status: 'validated-handoff' },
+        }),
+      })
+    }))
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'Show agent diff' }))
+    await user.click(screen.getByRole('button', { name: 'Accept and send to publisher' }))
+
+    expect(await screen.findByText('Publisher handoff created')).toBeInTheDocument()
+    expect(screen.getByText(/Validate mode made no MAD edit/)).toBeInTheDocument()
+    expect(globalThis.fetch).toHaveBeenCalledWith('/api/cases/MAD-2026-1842/accept', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('collects a rejection comment and places it in the local agent revision context', async () => {
+    vi.stubGlobal('fetch', vi.fn((url) => {
+      if (url === '/test-data/brookline-mad-snapshot.json') return Promise.resolve({ ok: false })
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          rejection: {
+            id: 'reject-test',
+            status: 'active',
+            comment: 'Use the driveway access point instead of the east entrance.',
+          },
+        }),
+      })
+    }))
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'Show agent diff' }))
+    await user.click(screen.getByRole('button', { name: 'Reject and add feedback' }))
+    expect(screen.getByRole('heading', { name: 'What needs to change?' })).toBeInTheDocument()
+
+    await user.type(screen.getByRole('textbox', { name: 'Reviewer feedback' }), 'Use the driveway access point instead of the east entrance.')
+    await user.click(screen.getByRole('button', { name: 'Reject and request revision' }))
+
+    expect(await screen.findByText('Reviewer feedback is in context')).toBeInTheDocument()
+    expect(screen.getByText('Use the driveway access point instead of the east entrance.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Review the reviewer feedback and propose a revised draft/ })).toBeInTheDocument()
+    expect(globalThis.fetch).toHaveBeenCalledWith('/api/cases/MAD-2026-1842/reject', expect.objectContaining({ method: 'POST' }))
   })
 
   it('sends a case-scoped question to the local agent bridge', async () => {
@@ -174,15 +267,14 @@ describe('MAD QA feature explorer', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
-  it('withholds the approval action for a case awaiting municipal evidence', async () => {
+  it('does not show a publisher action inside a case feature table', async () => {
     const user = userEvent.setup()
     render(<App />)
 
     await user.click(screen.getByRole('button', { name: /211 Union Street/ }))
     await user.click(screen.getByRole('button', { name: 'Open address point' }))
 
-    expect(screen.getByText('No edit proposal')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Accept proposed change' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Accept and send to publisher' })).not.toBeInTheDocument()
   })
 
   it('loads the optional public MAD fixture as a no-edit map view with an ADDRESS_ID relate', async () => {
@@ -199,6 +291,6 @@ describe('MAD QA feature explorer', () => {
     await user.click(screen.getByRole('button', { name: 'Open public address point' }))
     expect(screen.getByText('ADDR_PT_ID')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Advanced address record 3315676/ })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Accept proposed change' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Accept and send to publisher' })).not.toBeInTheDocument()
   })
 })

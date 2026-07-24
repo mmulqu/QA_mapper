@@ -8,7 +8,8 @@ This is the running implementation record for the workbench. Check off a gate on
 
 - [x] Leaflet review workspace with a persistent case list, vector feature selection, readable attribute tables, and preset record relates.
 - [x] Safe synthetic case snapshots that demonstrate the address point, Master Address, structure, structure lookup, variant, parcel, and road relationships.
-- [x] Local-only approval simulation and declarative changeset schema.
+- [x] Human accept/reject review controls on the complete diff: acceptance freezes a server-side ArcPy publisher handoff; rejection becomes case-scoped revision context for the local agent.
+- [x] Local append-only proposal registry: unique proposal IDs, parent/descendant lineage, category, summary, reviewer feedback, status events, and LM Studio model IDs in `.runtime/proposal-history.csv`.
 - [x] On-demand agent change sheet: every existing source value is red, every draft value is green, and new address records are green-only.
 - [x] Localhost-only LM Studio agent bridge with case-scoped read tools, controlled fixture-draft staging, validation, and a map-side agent panel.
 - [x] Public MassGIS basemap and 2025 natural-color imagery tile services in Leaflet.
@@ -90,6 +91,7 @@ Codex can already read and change local files in this workspace, including synth
 
 - [x] Add a local LM Studio bridge backed by the synthetic case fixtures. It exposes `get_case`, `get_feature`, `get_related`, controlled fixture-draft staging, and draft validation on localhost only.
 - [x] Exercise the bridge with the local `qwen3-4b-thinking-2507` model: explain a case, stage the eligible draft, and withhold an evidence-only draft.
+- [x] Add an allow-listed, on-demand skill loader. The model sees only a compact skill index and loads a full `SKILL.md` only when a prompt explicitly calls for it.
 - [ ] Replace fixture-draft staging with `stage_draft_operation` against the resettable relational Gate 1 sandbox.
 - [ ] Exercise each initial skill as Codex against resettable fixtures.
 - [ ] Record every tool call, proposed operation, validator result, and human decision in the test audit trail.
@@ -103,7 +105,7 @@ The eventual browser chat must call an authenticated server-side agent service. 
 - [ ] Add read-only question answering first: explain a flag, summarize case evidence, and find related records.
 - [ ] Add draft-authoring requests second: propose, never publish.
 - [ ] Send the assistant a case-scoped toolset and current case snapshot, not the entire MAD database.
-- [ ] Require a human approval event before any publisher job can be queued.
+- [x] Require a human approval event before a publisher handoff can be queued.
 
 **Acceptance test:** A reviewer can ask why a case was flagged and request a draft; the assistant cites its case evidence, produces a reviewable changeset, and cannot publish it.
 
@@ -116,6 +118,13 @@ The eventual browser chat must call an authenticated server-side agent service. 
 - [ ] Apply only allow-listed edits in one ArcPy edit session or child version; roll back as a unit on failure.
 - [ ] Store approver, skill/rule versions, tool evidence, preconditions, exact operations, execution output, and final validation results in append-only audit history.
 - [ ] Pilot in a test version before any production workflow is considered.
+
+### Current Gate 6 progress
+
+- [x] The browser has no production credentials and cannot directly edit MAD.
+- [x] An accepted fixture draft is frozen into an ignored local handoff file, checked for allow-listed operations and snapshot preconditions, then passed to `scripts/arcpy_publish.py` in validate mode.
+- [x] A rejected draft collects reviewer context and blocks acceptance until the local agent stages a revised draft.
+- [ ] Replace validate-only handoffs with a MAD-specific ArcPy adapter and pilot it in a secured test version.
 
 **Acceptance test:** A stale source hash blocks publication; a valid approval applies transactionally in a test version and leaves an independently reviewable audit record.
 

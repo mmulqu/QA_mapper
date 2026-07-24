@@ -4,9 +4,11 @@ The browser must never execute ArcPy, arbitrary SQL, or direct feature-service e
 
 ## Suggested endpoints
 
-### `POST /cases/{case_id}/approve`
+### `POST /api/cases/{case_id}/accept`
 
-Freezes the current draft, binds reviewer identity and note, records validation output, and returns an approval identifier.
+Freezes the current draft, validates its allow-listed operations and source snapshot preconditions, writes an immutable handoff JSON, and invokes `scripts/arcpy_publish.py`. The browser does not send an arbitrary changeset and never receives MAD credentials.
+
+`POST /api/cases/{case_id}/reject` records a short human comment. The local agent receives that comment as case-scoped context on its next request; it does not make a production edit.
 
 ### `POST /publish-jobs`
 
@@ -40,3 +42,9 @@ link_point_to_structure(operation, resolved_context)
 ```
 
 Each function should return a structured before/after record for the audit log. It should not commit independently; the job owns the transaction.
+
+## Current local behavior
+
+The workbench now sends an accepted fixture draft to the publisher script in **validate** mode. It stores the frozen job under `.runtime/mad-publisher-jobs/` (ignored by Git) and checks the handoff schema, validation result, source hash, and allow-listed operation names. Validate mode makes no MAD edit and does not require ArcPy.
+
+`MAD_PUBLISH_MODE=apply` may be used only after the real adapter is approved. Point `MAD_ARCPY_PYTHON` to the ArcGIS Pro Python executable and provide the real connection/version, MAD field map, relationship rules, GlobalID policy, validators, and audit destination. The supplied script fails closed in apply mode until that MAD-specific adapter exists.
