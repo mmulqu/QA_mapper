@@ -10,8 +10,8 @@ function ChangeValue({ label, tone, value, type }) {
   )
 }
 
-export default function ChangeDiffInspector({ caseItem, onClose, onSelectFeature }) {
-  const changes = getCaseChanges(caseItem)
+export default function ChangeDiffInspector({ caseItem, changes: stagedChanges, onClose, onSelectFeature }) {
+  const changes = stagedChanges ?? getCaseChanges(caseItem)
   const fieldCount = countChangedFields(changes)
 
   return (

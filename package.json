@@ -4,10 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "agent": "node scripts/agent-server.mjs",
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "vitest run"
+    "test": "vitest run && node --test scripts/agent-server.test.mjs"
   },
   "dependencies": {
     "leaflet": "^1.9.4",

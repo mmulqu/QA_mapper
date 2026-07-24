@@ -9,7 +9,7 @@ import {
   Tooltip,
   useMap,
 } from 'react-leaflet'
-import { GitCompareArrows, Image, Layers3, Map as MapIcon, Minus, Plus, Route } from 'lucide-react'
+import { Bot, GitCompareArrows, Image, Layers3, Map as MapIcon, Minus, Plus, Route } from 'lucide-react'
 import { MAP_SERVICES } from '../config/mapServices'
 
 function MapSync({ caseItem }) {
@@ -131,6 +131,17 @@ function ChangeDiffControl({ changeCount, onShowDiff }) {
   )
 }
 
+function AgentControl({ onShowAgent }) {
+  return (
+    <div className="map-agent-control">
+      <button type="button" className="map-tool" onClick={onShowAgent}>
+        <Bot size={18} />
+        Agent
+      </button>
+    </div>
+  )
+}
+
 function PublicMadMapSync({ snapshot }) {
   const map = useMap()
 
@@ -231,6 +242,7 @@ export default function MapWorkspace({
   publicSnapshot,
   changeCount,
   onShowDiff,
+  onShowAgent,
 }) {
   if (publicSnapshot) {
     return (
@@ -397,6 +409,7 @@ export default function MapWorkspace({
         setBaseMap={setBaseMap}
       />
       <ChangeDiffControl changeCount={changeCount} onShowDiff={onShowDiff} />
+      <AgentControl onShowAgent={onShowAgent} />
       <div className="map-legend" aria-label="Map legend">
         <span><i className="legend-dot current" /> Current</span>
         <span><i className="legend-dot proposed" /> Proposed</span>

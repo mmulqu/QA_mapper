@@ -1,4 +1,4 @@
-import { formatCoordinate } from './geometry'
+import { formatCoordinate } from './geometry.js'
 
 const relationKeys = [
   'address-point',

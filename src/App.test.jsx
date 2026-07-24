@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event'
 import App from './App'
 
 vi.mock('./components/MapWorkspace', () => ({
-  default: ({ caseItem, onSelectFeature, onShowDiff, publicSnapshot }) => (
+  default: ({ caseItem, onSelectFeature, onShowAgent, onShowDiff, publicSnapshot }) => (
     <section data-testid="map-workspace">
       {publicSnapshot ? 'Public MAD workspace for Brookline' : `Leaflet workspace for ${caseItem.address}`}
       <button
@@ -16,6 +16,7 @@ vi.mock('./components/MapWorkspace', () => ({
       </button>
       {!publicSnapshot && <button type="button" onClick={() => onSelectFeature('structure')}>Open structure</button>}
       {!publicSnapshot && <button type="button" onClick={onShowDiff}>Show agent diff</button>}
+      {!publicSnapshot && <button type="button" onClick={onShowAgent}>Open local agent</button>}
     </section>
   ),
 }))
@@ -127,6 +128,26 @@ describe('MAD QA feature explorer', () => {
     await user.click(screen.getByRole('button', { name: 'Show agent diff' }))
 
     expect(screen.getByText('No agent changes to review')).toBeInTheDocument()
+  })
+
+  it('sends a case-scoped question to the local agent bridge', async () => {
+    const agentReply = {
+      reply: 'The point falls outside its linked parcel and the proposed entrance agrees with the structure footprint.',
+      toolEvents: [{ name: 'get_case', summary: 'Read case snapshot' }],
+    }
+    vi.stubGlobal('fetch', vi.fn((url) => {
+      if (url === '/test-data/brookline-mad-snapshot.json') return Promise.resolve({ ok: false })
+      return Promise.resolve({ ok: true, json: async () => agentReply })
+    }))
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'Open local agent' }))
+    await user.click(screen.getByRole('button', { name: 'Why was this case flagged?' }))
+
+    expect(await screen.findByText(agentReply.reply)).toBeInTheDocument()
+    expect(screen.getByText('Read case snapshot')).toBeInTheDocument()
+    expect(globalThis.fetch).toHaveBeenCalledWith('/api/cases/MAD-2026-1842/agent', expect.objectContaining({ method: 'POST' }))
   })
 
   it('withholds the approval action for a case awaiting municipal evidence', async () => {

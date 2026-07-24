@@ -19,6 +19,7 @@ import {
   PanelLeftClose,
   X,
 } from 'lucide-react'
+import AgentPanel from './components/AgentPanel'
 import ChangeDiffInspector from './components/ChangeDiffInspector'
 import MapWorkspace from './components/MapWorkspace'
 import { MAP_SERVICES } from './config/mapServices'
@@ -207,6 +208,8 @@ export default function App() {
   const [activeDataView, setActiveDataView] = useState('cases')
   const [publicSnapshot, setPublicSnapshot] = useState(null)
   const [showChangeDiff, setShowChangeDiff] = useState(false)
+  const [showAgent, setShowAgent] = useState(false)
+  const [agentDrafts, setAgentDrafts] = useState({})
 
   useEffect(() => {
     if (typeof globalThis.fetch !== 'function') return undefined
@@ -234,13 +237,13 @@ export default function App() {
       : getFeatureRecords(caseItem, caseItem.geometry.proposed),
     [activeDataView, caseItem, publicSnapshot],
   )
-  const changeCount = useMemo(
-    () => countChangedFields(getCaseChanges(caseItem)),
-    [caseItem],
-  )
+  const activeAgentDraft = agentDrafts[caseItem.id]
+  const activeChanges = activeAgentDraft?.changes ?? getCaseChanges(caseItem)
+  const changeCount = useMemo(() => countChangedFields(activeChanges), [activeChanges])
 
   const selectFeature = (featureKey) => {
     setShowChangeDiff(false)
+    setShowAgent(false)
     setSelectedFeatureKey(featureKey)
   }
 
@@ -249,6 +252,7 @@ export default function App() {
     setActiveCaseId(caseId)
     setSelectedFeatureKey(null)
     setShowChangeDiff(false)
+    setShowAgent(false)
     setDocketCollapsed(false)
   }
 
@@ -256,6 +260,7 @@ export default function App() {
     setActiveDataView('public')
     setSelectedFeatureKey(null)
     setShowChangeDiff(false)
+    setShowAgent(false)
     setDocketCollapsed(false)
   }
 
@@ -293,7 +298,13 @@ export default function App() {
           changeCount={changeCount}
           onShowDiff={() => {
             setSelectedFeatureKey(null)
+            setShowAgent(false)
             setShowChangeDiff(true)
+          }}
+          onShowAgent={() => {
+            setSelectedFeatureKey(null)
+            setShowChangeDiff(false)
+            setShowAgent(true)
           }}
         />
         {selectedFeatureKey && (
@@ -310,8 +321,20 @@ export default function App() {
         {showChangeDiff && activeDataView === 'cases' && !selectedFeatureKey && (
           <ChangeDiffInspector
             caseItem={caseItem}
+            changes={activeChanges}
             onClose={() => setShowChangeDiff(false)}
             onSelectFeature={selectFeature}
+          />
+        )}
+        {showAgent && activeDataView === 'cases' && !selectedFeatureKey && (
+          <AgentPanel
+            caseItem={caseItem}
+            onClose={() => setShowAgent(false)}
+            onDraftStaged={(draft) => setAgentDrafts((current) => ({ ...current, [caseItem.id]: draft }))}
+            onReviewDraft={() => {
+              setShowAgent(false)
+              setShowChangeDiff(true)
+            }}
           />
         )}
       </main>

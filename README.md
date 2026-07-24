@@ -9,12 +9,26 @@ The current app focuses on the geometry-and-record inspection loop without conne
 - switch between the public MassGIS basemap and MassGIS 2025 natural-color imagery, and control vector visibility;
 - click a vector to open its full attribute table;
 - follow preset relations between address points, Master Address, MAD structure, structure lookup, address variants, and parcel;
+- ask a local LM Studio agent to explain one synthetic case or stage its controlled training draft;
+- inspect staged field changes as red/current and green/proposed values;
 - accept an eligible address-point proposal locally in the training workspace.
 
 ## Run it
 
+The easiest local start is to double-click **Start MAD QA Workbench.cmd** in this folder. It starts LM Studio when needed, loads the configured local model, starts the agent bridge and app, then opens the workbench in your browser.
+
+For development, use two PowerShell windows:
+
+First window:
+
 ```powershell
 npm install
+npm run agent
+```
+
+Second window:
+
+```powershell
 npm run dev
 ```
 
@@ -24,6 +38,10 @@ Open [http://127.0.0.1:4173](http://127.0.0.1:4173).
 npm test
 npm run build
 ```
+
+## Optional local LM Studio agent
+
+The app can connect to a model already running in LM Studio through a localhost-only bridge. The double-click launcher starts it for you; for manual development, run `npm run agent` in a second terminal. See [docs/LOCAL_LM_STUDIO_AGENT.md](docs/LOCAL_LM_STUDIO_AGENT.md) for setup, configuration, allowed tools, and the important training-only limits.
 
 ## Demonstrated feature relationships
 

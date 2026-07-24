@@ -10,6 +10,7 @@ This is the running implementation record for the workbench. Check off a gate on
 - [x] Safe synthetic case snapshots that demonstrate the address point, Master Address, structure, structure lookup, variant, parcel, and road relationships.
 - [x] Local-only approval simulation and declarative changeset schema.
 - [x] On-demand agent change sheet: every existing source value is red, every draft value is green, and new address records are green-only.
+- [x] Localhost-only LM Studio agent bridge with case-scoped read tools, controlled fixture-draft staging, validation, and a map-side agent panel.
 - [x] Public MassGIS basemap and 2025 natural-color imagery tile services in Leaflet.
 - [ ] Replace the synthetic case source with a server-backed case API.
 
@@ -87,7 +88,9 @@ Each skill must specify its allowed operations, required evidence, preconditions
 
 Codex can already read and change local files in this workspace, including synthetic case fixtures. To test data operations properly, expose the Gate 1 sandbox through narrow tools such as `get_case`, `get_feature`, `get_related_records`, `search_nearby_addresses`, `stage_draft_operation`, `validate_draft`, and `reset_test_case`. Codex should use those tools rather than raw SQL or ArcPy writes.
 
-- [ ] Add a local tool/MCP adapter backed by the test sandbox.
+- [x] Add a local LM Studio bridge backed by the synthetic case fixtures. It exposes `get_case`, `get_feature`, `get_related`, controlled fixture-draft staging, and draft validation on localhost only.
+- [x] Exercise the bridge with the local `qwen3-4b-thinking-2507` model: explain a case, stage the eligible draft, and withhold an evidence-only draft.
+- [ ] Replace fixture-draft staging with `stage_draft_operation` against the resettable relational Gate 1 sandbox.
 - [ ] Exercise each initial skill as Codex against resettable fixtures.
 - [ ] Record every tool call, proposed operation, validator result, and human decision in the test audit trail.
 
