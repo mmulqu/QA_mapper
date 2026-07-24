@@ -218,7 +218,7 @@ button:focus-visible {
 .map-case-label strong { font-size: 19px; line-height: 1.1; }
 .map-case-label span:last-child { color: #526167; font-size: 14px; }
 
-.map-layer-picker { position: absolute; z-index: 810; top: 18px; right: 18px; }
+.map-layer-picker { position: absolute; z-index: 820; top: 18px; right: 18px; }
 .map-diff-control { position: absolute; z-index: 810; top: 70px; right: 18px; }
 .map-agent-control { position: absolute; z-index: 810; top: 122px; right: 18px; }
 .map-diff-control .map-tool { min-width: 136px; justify-content: space-between; }
@@ -571,6 +571,25 @@ button:focus-visible {
   .agent-panel { width: min(440px, calc(100vw - 278px)); min-width: 320px; top: 12px; right: 12px; bottom: 12px; }
   .map-case-label { min-width: 230px; }
   .map-legend { gap: 9px; font-size: 12px; }
+}
+
+/* At narrower desktop widths, the open drawer no longer has enough horizontal
+   clearance to share the map's top-left context controls. Keep it below that
+   context instead of letting either overlay cover the other. */
+@media (min-width: 901px) and (max-width: 1180px) {
+  .feature-inspector,
+  .change-diff-inspector,
+  .agent-panel {
+    top: 116px;
+  }
+}
+
+@media (min-width: 681px) and (max-width: 900px) {
+  .feature-inspector,
+  .change-diff-inspector,
+  .agent-panel {
+    top: 196px;
+  }
 }
 
 @media (max-width: 680px) {
