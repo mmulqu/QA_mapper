@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { acceptCaseDraft, askLocalAgent, getProposalLineage, rejectCaseDraft } from './agentClient'
+import {
+  acceptCaseDraft,
+  askLocalAgent,
+  getProposalLineage,
+  readAgentEventStream,
+  rejectCaseDraft,
+} from './agentClient'
 
 describe('local agent client', () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -47,5 +53,29 @@ describe('local agent client', () => {
 
     await expect(getProposalLineage('MAD-2026-1842')).resolves.toEqual([{ id: 'proposal-1' }])
     expect(fetchMock).toHaveBeenCalledWith('/api/cases/MAD-2026-1842/proposals')
+  })
+
+  it('reads model-agnostic activity and the final result from an event stream', async () => {
+    const encoder = new TextEncoder()
+    const chunks = [
+      'event: activity\ndata: {"id":"reasoning-1","type":"reasoning_delta","text":"Checking rows."}\n\n',
+      'event: activity\ndata: {"id":"skill-1","type":"skill","phase":"completed","name":"load_skill"}\n\n',
+      'event: complete\ndata: {"reply":"Duplicate confirmed.","model":"local-model"}\n\n',
+    ]
+    const response = {
+      body: new ReadableStream({
+        start(controller) {
+          chunks.forEach((chunk) => controller.enqueue(encoder.encode(chunk)))
+          controller.close()
+        },
+      }),
+    }
+    const activity = []
+
+    await expect(readAgentEventStream(response, (event) => activity.push(event))).resolves.toEqual({
+      reply: 'Duplicate confirmed.',
+      model: 'local-model',
+    })
+    expect(activity.map((event) => event.type)).toEqual(['reasoning_delta', 'skill'])
   })
 })

@@ -1,17 +1,20 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import L from 'leaflet'
 import {
   CircleMarker,
   GeoJSON,
   MapContainer,
+  Pane,
   Polygon,
   Polyline,
   TileLayer,
   Tooltip,
   useMap,
+  useMapEvents,
 } from 'react-leaflet'
 import { Bot, GitCompareArrows, Image, Layers3, Map as MapIcon, Minus, Plus, Route } from 'lucide-react'
 import { MAP_SERVICES } from '../config/mapServices'
+import { buildTownFeatureIndex, queryTownFeaturesAtLatLng } from '../lib/mapHitTest'
 
 function MapSync({ caseItem }) {
   const map = useMap()
@@ -185,11 +188,40 @@ const townLayerStyles = {
   centroids: { color: '#8b620e', weight: 1.2, fillColor: '#fff7dd', fillOpacity: 0.82, radius: 3.5 },
 }
 
+const townPaneOrder = {
+  communities: 410,
+  parcels: 420,
+  structures: 430,
+  roads: 440,
+  centroids: 450,
+  addresses: 460,
+}
+
+function TownMapClickQuery({ featureIndex, visibleLayers, onQueryFeatures }) {
+  useMapEvents({
+    click(event) {
+      const results = queryTownFeaturesAtLatLng({
+        featureIndex,
+        visibleLayers,
+        latlng: event.latlng,
+        map: event.target,
+      })
+      onQueryFeatures({
+        latlng: [event.latlng.lat, event.latlng.lng],
+        results,
+      })
+    },
+  })
+
+  return null
+}
+
 function TownExtractWorkspace({
   extract,
   caseItem,
-  selectedFeatureKey,
-  onSelectFeature,
+  highlightedFeatureKey,
+  queryResultKeys,
+  onQueryFeatures,
   visibleLayers,
   setVisibleLayers,
   baseMap,
@@ -202,6 +234,9 @@ function TownExtractWorkspace({
   const targetAddress = caseItem.records?.addressPoint?.id
   const targetStructure = caseItem.records?.structure?.id
   const vectorLayers = extract.layers.map((layer) => [layer.id, `${layer.label} (${layer.count.toLocaleString()})`])
+  const featureIndex = useMemo(() => buildTownFeatureIndex(extract), [extract])
+  const queryResults = useMemo(() => new Set(queryResultKeys), [queryResultKeys])
+  const querySignature = queryResultKeys.join('|')
 
   const isIssueFeature = (feature) => (
     (feature.properties.__layer === 'addresses' && feature.properties.__id === targetAddress)
@@ -210,8 +245,23 @@ function TownExtractWorkspace({
 
   const styleFor = (feature) => {
     const baseStyle = townLayerStyles[feature.properties.__layer] || townLayerStyles.parcels
-    if (feature.properties.__recordKey === selectedFeatureKey) {
-      return { ...baseStyle, color: '#0d638f', weight: Math.max(baseStyle.weight || 1, 4), fillOpacity: 0.32 }
+    if (feature.properties.__recordKey === highlightedFeatureKey) {
+      return {
+        ...baseStyle,
+        color: '#0d638f',
+        weight: Math.max(baseStyle.weight || 1, 5),
+        fillOpacity: 0.38,
+        radius: Math.max(baseStyle.radius || 0, 8),
+      }
+    }
+    if (queryResults.has(feature.properties.__recordKey)) {
+      return {
+        ...baseStyle,
+        color: '#8b620e',
+        weight: Math.max(baseStyle.weight || 1, 3),
+        fillOpacity: 0.26,
+        radius: Math.max(baseStyle.radius || 0, 6.5),
+      }
     }
     if (isIssueFeature(feature)) {
       return { ...baseStyle, color: '#b63d31', weight: Math.max(baseStyle.weight || 1, 3), fillOpacity: 0.3 }
@@ -235,29 +285,43 @@ function TownExtractWorkspace({
         />
         <TownExtractMapSync extract={extract} caseItem={caseItem} />
         <MapZoomControls />
+        <TownMapClickQuery
+          featureIndex={featureIndex}
+          visibleLayers={visibleLayers}
+          onQueryFeatures={onQueryFeatures}
+        />
 
         {extract.layers
           .filter((layer) => visibleLayers.includes(layer.id))
           .map((layer) => (
-            <GeoJSON
-              key={`${layer.id}-${selectedFeatureKey || 'none'}-${baseMap}`}
-              data={layer.geojson}
-              style={styleFor}
-              pointToLayer={(feature, latlng) => {
-                const options = styleFor(feature)
-                return L.circleMarker(latlng, { ...options, radius: options.radius || 4 })
-              }}
-              onEachFeature={(feature, leafletLayer) => {
+            <Pane
+              key={layer.id}
+              name={`town-${layer.id}`}
+              style={{ zIndex: townPaneOrder[layer.id] ?? 425 }}
+            >
+              <GeoJSON
+                key={`${layer.id}-${highlightedFeatureKey || 'none'}-${querySignature}-${baseMap}`}
+                data={layer.geojson}
+                style={styleFor}
+                pointToLayer={(feature, latlng) => {
+                  const options = styleFor(feature)
+                  return L.circleMarker(latlng, {
+                    ...options,
+                    pane: `town-${layer.id}`,
+                    radius: options.radius || 4,
+                  })
+                }}
+                onEachFeature={(feature, leafletLayer) => {
                 const properties = feature.properties
                 const label = properties.LABEL_TEXT
                   || properties.SITE_ADDR
                   || properties.COMMUNITY1
                   || properties.STREET_N_1
                   || properties.__id
-                leafletLayer.bindTooltip(`${layer.label}: ${label} · click for attributes`, { sticky: true })
-                leafletLayer.on('click', () => onSelectFeature(properties.__recordKey))
-              }}
-            />
+                leafletLayer.bindTooltip(`${layer.label}: ${label} — click to query this location`, { sticky: true })
+                }}
+              />
+            </Pane>
           ))}
       </MapContainer>
 
@@ -371,6 +435,9 @@ export default function MapWorkspace({
   setBaseMap,
   publicSnapshot,
   townExtract,
+  highlightedFeatureKey,
+  queryResultKeys = [],
+  onQueryFeatures,
   changeCount,
   onShowDiff,
   onShowAgent,
@@ -380,8 +447,9 @@ export default function MapWorkspace({
       <TownExtractWorkspace
         extract={townExtract}
         caseItem={caseItem}
-        selectedFeatureKey={selectedFeatureKey}
-        onSelectFeature={onSelectFeature}
+        highlightedFeatureKey={highlightedFeatureKey}
+        queryResultKeys={queryResultKeys}
+        onQueryFeatures={onQueryFeatures}
         visibleLayers={visibleLayers}
         setVisibleLayers={setVisibleLayers}
         baseMap={baseMap}

@@ -35,15 +35,62 @@ export async function getQaIssueCatalog() {
   return payload
 }
 
-export async function investigateQaIssue(viewId) {
-  const response = await fetch(`/api/qa/issues/${encodeURIComponent(viewId)}/investigate`, {
+function parseEventBlock(block) {
+  let event = 'message'
+  const data = []
+  for (const line of block.split(/\r?\n/)) {
+    if (line.startsWith('event:')) event = line.slice(6).trim()
+    if (line.startsWith('data:')) data.push(line.slice(5).trimStart())
+  }
+  if (!data.length) return null
+  return { event, payload: JSON.parse(data.join('\n')) }
+}
+
+export async function readAgentEventStream(response, onActivity) {
+  if (!response.body || typeof response.body.getReader !== 'function') {
+    return response.json()
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let result = null
+
+  const processBlock = (block) => {
+    const message = parseEventBlock(block)
+    if (!message) return
+    if (message.event === 'activity') onActivity?.(message.payload)
+    if (message.event === 'complete') result = message.payload
+    if (message.event === 'error') {
+      throw new Error(message.payload?.message || 'The local agent stream stopped unexpectedly.')
+    }
+  }
+
+  while (true) {
+    const { value, done } = await reader.read()
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
+    const blocks = buffer.split(/\r?\n\r?\n/)
+    buffer = blocks.pop() || ''
+    blocks.forEach(processBlock)
+    if (done) break
+  }
+  if (buffer.trim()) processBlock(buffer)
+  if (!result) throw new Error('The local agent stream ended before returning a result.')
+  return result
+}
+
+export async function investigateQaIssue(viewId, { onActivity, signal } = {}) {
+  const response = await fetch(`/api/qa/issues/${encodeURIComponent(viewId)}/investigate-stream`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
     body: JSON.stringify({}),
+    signal,
   })
-  const payload = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(payload.error || 'The local agent could not investigate this QA category.')
-  return payload
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}))
+    throw new Error(payload.error || 'The local agent could not investigate this QA category.')
+  }
+  return readAgentEventStream(response, onActivity)
 }
 
 export async function getTownExtract(url) {

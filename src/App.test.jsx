@@ -5,7 +5,16 @@ import userEvent from '@testing-library/user-event'
 import App from './App'
 
 vi.mock('./components/MapWorkspace', () => ({
-  default: ({ caseItem, onSelectFeature, onShowAgent, onShowDiff, publicSnapshot, townExtract }) => (
+  default: ({
+    caseItem,
+    highlightedFeatureKey,
+    onQueryFeatures,
+    onSelectFeature,
+    onShowAgent,
+    onShowDiff,
+    publicSnapshot,
+    townExtract,
+  }) => (
     <section data-testid="map-workspace">
       {townExtract
         ? `Town extract workspace for ${caseItem.municipality}`
@@ -24,6 +33,45 @@ vi.mock('./components/MapWorkspace', () => ({
       >
         {townExtract ? 'Open town address point' : publicSnapshot ? 'Open public address point' : 'Open address point'}
       </button>
+      {townExtract && (
+        <>
+          <button
+            type="button"
+            onClick={() => onQueryFeatures({
+              latlng: [42.6514, -70.6139],
+              results: [
+                {
+                  key: 'addresses:M_272655_933812',
+                  id: 'M_272655_933812',
+                  label: '8 ALPACA COURT',
+                  layerId: 'addresses',
+                  layerLabel: 'Address points',
+                  geometryType: 'Point',
+                },
+                {
+                  key: 'structures:272643_933827',
+                  id: '272643_933827',
+                  label: 'Structure 272643_933827',
+                  layerId: 'structures',
+                  layerLabel: 'MAD structures',
+                  geometryType: 'Polygon',
+                },
+                {
+                  key: 'communities:270',
+                  id: '270',
+                  label: 'ROCKPORT',
+                  layerId: 'communities',
+                  layerLabel: 'MSAG communities',
+                  geometryType: 'MultiPolygon',
+                },
+              ],
+            })}
+          >
+            Query overlapping town features
+          </button>
+          <span>Highlighted feature: {highlightedFeatureKey || 'none'}</span>
+        </>
+      )}
       {!publicSnapshot && <button type="button" onClick={() => onSelectFeature('structure')}>Open structure</button>}
       {!publicSnapshot && <button type="button" onClick={onShowDiff}>Show agent diff</button>}
       {!publicSnapshot && <button type="button" onClick={onShowAgent}>Open local agent</button>}
@@ -138,7 +186,7 @@ describe('MAD QA feature explorer', () => {
       if (url === '/test-data/brookline-mad-snapshot.json') {
         return Promise.resolve({ ok: false, json: async () => ({}) })
       }
-      if (url === '/api/qa/issues/MADV_QA_ASL_DUPES/investigate') {
+      if (url === '/api/qa/issues/MADV_QA_ASL_DUPES/investigate-stream') {
         return new Promise((resolve) => { finishInvestigation = resolve })
       }
       if (url === '/api/towns/252/extract') {
@@ -156,6 +204,24 @@ describe('MAD QA feature explorer', () => {
         })
       }
       if (String(url).startsWith('/api/towns/252/records?')) {
+        const key = new URL(String(url), 'http://localhost').searchParams.get('key')
+        if (key === 'structures:272643_933827') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              selectedKey: key,
+              records: {
+                [key]: {
+                  key,
+                  label: 'MAD structure',
+                  id: '272643_933827',
+                  attributes: [{ field: 'STRUCTURE_ID', value: '272643_933827' }],
+                  related: ['addresses:M_272655_933812'],
+                },
+              },
+            }),
+          })
+        }
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -185,7 +251,8 @@ describe('MAD QA feature explorer', () => {
     render(<App />)
 
     await user.click(await screen.findByRole('button', { name: /Structure lookup records that are functionally duplicative/ }))
-    expect(screen.getByRole('status')).toHaveTextContent('Local agent investigation')
+    expect(screen.getByText('Local agent investigation')).toBeInTheDocument()
+    expect(screen.getByText('Opening the investigation stream')).toBeInTheDocument()
 
     finishInvestigation({
       ok: true,
@@ -214,6 +281,85 @@ describe('MAD QA feature explorer', () => {
     expect(await screen.findByRole('heading', { name: 'Attributes' })).toBeInTheDocument()
     expect(screen.getByText('ADDRESS_POINT_ID')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Master Address 4242779/ })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Close attributes' }))
+
+    await user.click(screen.getByRole('button', { name: 'Query overlapping town features' }))
+    expect(screen.getByRole('heading', { name: '3 features' })).toBeInTheDocument()
+    expect(screen.getByText('Choose a record')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /MAD structures.*Structure 272643_933827/ }))
+    expect(await screen.findByText('STRUCTURE_ID')).toBeInTheDocument()
+    expect(screen.getByText('Highlighted feature: structures:272643_933827')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Back to previous selection' }))
+    expect(screen.getByRole('heading', { name: '3 features' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Address points.*8 ALPACA COURT/ }))
+    expect(await screen.findByText('ADDRESS_POINT_ID')).toBeInTheDocument()
+    expect(screen.getByText('Highlighted feature: addresses:M_272655_933812')).toBeInTheDocument()
+  })
+
+  it('streams model thinking, skill loads, tool calls, and output through the center workspace', async () => {
+    const encoder = new TextEncoder()
+    let streamController
+    const streamResponse = {
+      ok: true,
+      body: new ReadableStream({
+        start(controller) {
+          streamController = controller
+        },
+      }),
+    }
+    vi.stubGlobal('fetch', vi.fn((url) => {
+      if (url === '/api/qa/issues') return Promise.resolve({ ok: true, json: async () => qaCatalog })
+      if (url === '/test-data/brookline-mad-snapshot.json') return Promise.resolve({ ok: false, json: async () => ({}) })
+      if (url === '/api/qa/issues/MADV_QA_ASL_DUPES/investigate-stream') return Promise.resolve(streamResponse)
+      return Promise.resolve({ ok: false, json: async () => ({}) })
+    }))
+    const sendEvent = (event, payload) => {
+      streamController.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`))
+    }
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: /Structure lookup records that are functionally duplicative/ }))
+    sendEvent('activity', {
+      id: 'model-1', type: 'model', phase: 'started', turn: 1, model: 'another-local-model',
+      title: 'Model turn 1', detail: 'Reading the case.',
+    })
+    sendEvent('activity', {
+      id: 'reasoning-1', type: 'reasoning_delta', turn: 1, text: 'Comparing lookup relationships.',
+    })
+    sendEvent('activity', {
+      id: 'skill-call', type: 'skill', phase: 'completed', name: 'load_skill',
+      title: 'Skill loaded on demand', detail: 'Loaded skill: MAD Schema Intelligence',
+    })
+    sendEvent('activity', {
+      id: 'tool-call', type: 'tool', phase: 'completed', name: 'get_qa_investigation_packet',
+      title: 'get_qa_investigation_packet', detail: 'Read combined QA evidence and Rockport town context',
+    })
+    sendEvent('activity', {
+      id: 'output-1', type: 'output_delta', turn: 1, text: '**Duplicate confirmed** and staged for review.',
+    })
+
+    expect(await screen.findByText('Comparing lookup relationships.')).toBeInTheDocument()
+    expect(screen.getByText('load_skill')).toBeInTheDocument()
+    expect(screen.getAllByText('get_qa_investigation_packet')).toHaveLength(2)
+    expect(screen.getByText('Duplicate confirmed').tagName).toBe('STRONG')
+    expect(screen.getByText('another-local-model')).toBeInTheDocument()
+
+    sendEvent('complete', {
+      issue: qaCatalog.groups[0].issues[0],
+      caseItem: { ...rockportQaCase, status: 'evidence', townExtractSummary: null },
+      townExtractUrl: null,
+      model: 'another-local-model',
+      reply: 'No change staged.',
+      toolEvents: [],
+      draft: null,
+      proposals: [],
+    })
+    streamController.close()
+    expect(await screen.findByText('Production view connection required')).toBeInTheDocument()
   })
 
   it('opens an attribute table and follows preset relationships', async () => {

@@ -1192,7 +1192,233 @@ async function callLmStudio({ baseUrl, model, messages, tools }) {
   return message
 }
 
-export async function runCaseAgent({ caseItem, prompt, baseUrl, model }) {
+function textFragments(value) {
+  if (typeof value === 'string') return value
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return textFragments(value.text ?? value.content ?? value.value)
+  }
+  if (!Array.isArray(value)) return ''
+  return value.map((part) => {
+    if (typeof part === 'string') return part
+    if (!part || typeof part !== 'object') return ''
+    return textFragments(part.text ?? part.content ?? part.value)
+  }).join('')
+}
+
+export function normalizeLmStudioDelta(delta = {}) {
+  const contentParts = Array.isArray(delta.content) ? delta.content : null
+  const content = contentParts
+    ? contentParts
+      .filter((part) => !['thinking', 'reasoning', 'analysis'].includes(part?.type))
+      .map((part) => textFragments(part?.text ?? part?.content ?? part?.value))
+      .join('')
+    : textFragments(delta.content)
+  const partReasoning = contentParts
+    ? contentParts
+      .filter((part) => ['thinking', 'reasoning', 'analysis'].includes(part?.type))
+      .map((part) => textFragments(part?.text ?? part?.content ?? part?.value))
+      .join('')
+    : ''
+  const reasoning = [
+    delta.reasoning_content,
+    delta.reasoning,
+    delta.thinking,
+    delta.analysis,
+    partReasoning,
+  ].map(textFragments).find(Boolean) || ''
+
+  return { content, reasoning }
+}
+
+function partialMarkerLength(text, markers) {
+  const lower = text.toLowerCase()
+  let longest = 0
+  for (const marker of markers) {
+    const markerLower = marker.toLowerCase()
+    const maxLength = Math.min(lower.length, markerLower.length - 1)
+    for (let length = 1; length <= maxLength; length += 1) {
+      if (lower.endsWith(markerLower.slice(0, length))) longest = Math.max(longest, length)
+    }
+  }
+  return longest
+}
+
+export function createThinkingTagDecoder() {
+  const openMarkers = ['<think>', '<analysis>', '<reasoning>']
+  const closeMarkers = ['</think>', '</analysis>', '</reasoning>']
+  let buffer = ''
+  let thinking = false
+
+  const consume = (flush = false) => {
+    const output = []
+    const allMarkers = [...openMarkers, ...closeMarkers]
+
+    while (buffer) {
+      const lower = buffer.toLowerCase()
+      const matches = allMarkers
+        .map((marker) => ({ marker, index: lower.indexOf(marker) }))
+        .filter((match) => match.index >= 0)
+        .sort((left, right) => left.index - right.index)
+      const next = matches[0]
+
+      if (!next) {
+        const keep = flush ? 0 : partialMarkerLength(buffer, allMarkers)
+        const ready = keep ? buffer.slice(0, -keep) : buffer
+        if (ready) output.push({ type: thinking ? 'reasoning' : 'content', text: ready })
+        buffer = keep ? buffer.slice(-keep) : ''
+        break
+      }
+
+      const before = buffer.slice(0, next.index)
+      if (before) output.push({ type: thinking ? 'reasoning' : 'content', text: before })
+      thinking = openMarkers.includes(next.marker)
+      buffer = buffer.slice(next.index + next.marker.length)
+    }
+
+    return output
+  }
+
+  return {
+    push(chunk) {
+      buffer += chunk
+      return consume(false)
+    },
+    flush() {
+      return consume(true)
+    },
+  }
+}
+
+function appendToolCallDelta(toolCalls, fragment, fallbackIndex = 0) {
+  if (!fragment) return
+  const index = Number.isInteger(fragment.index) ? fragment.index : fallbackIndex
+  const existing = toolCalls.get(index) || {
+    id: '',
+    type: 'function',
+    function: { name: '', arguments: '' },
+  }
+  if (fragment.id && fragment.id !== existing.id) existing.id += fragment.id
+  if (fragment.type) existing.type = fragment.type
+  if (fragment.function?.name) existing.function.name += fragment.function.name
+  if (fragment.function?.arguments) {
+    existing.function.arguments += typeof fragment.function.arguments === 'string'
+      ? fragment.function.arguments
+      : JSON.stringify(fragment.function.arguments)
+  }
+  toolCalls.set(index, existing)
+}
+
+async function callLmStudioStreaming({ baseUrl, model, messages, tools, onEvent, turn, signal }) {
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
+    body: JSON.stringify({ model, messages, tools, tool_choice: 'auto', temperature: 0, stream: true }),
+    signal,
+  })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null)
+    throw new Error(payload?.error?.message || payload?.message || `LM Studio returned ${response.status}.`)
+  }
+
+  const contentType = response.headers.get('content-type') || ''
+  if (!response.body || !contentType.includes('text/event-stream')) {
+    const payload = await response.json().catch(() => null)
+    const message = payload?.choices?.[0]?.message
+    if (!message) throw new Error('LM Studio returned no assistant message.')
+    const normalized = normalizeLmStudioDelta(message)
+    if (normalized.reasoning) onEvent?.({ id: `reasoning-${turn}`, type: 'reasoning_delta', turn, text: normalized.reasoning })
+    if (normalized.content) onEvent?.({ id: `output-${turn}`, type: 'output_delta', turn, text: normalized.content })
+    return message
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  const tagDecoder = createThinkingTagDecoder()
+  const toolCalls = new Map()
+  let buffer = ''
+  let content = ''
+  let reasoning = ''
+
+  const emitText = (type, text) => {
+    if (!text) return
+    if (type === 'reasoning') {
+      reasoning += text
+      onEvent?.({ id: `reasoning-${turn}`, type: 'reasoning_delta', turn, text })
+    } else {
+      content += text
+      onEvent?.({ id: `output-${turn}`, type: 'output_delta', turn, text })
+    }
+  }
+
+  const processEventBlock = (block) => {
+    const data = block
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trimStart())
+      .join('\n')
+      .trim()
+    if (!data || data === '[DONE]') return
+
+    const payload = JSON.parse(data)
+    if (payload.error) throw new Error(payload.error.message || payload.error)
+    const choice = payload.choices?.[0]
+    const delta = choice?.delta ?? choice?.message
+    if (!delta) return
+
+    const normalized = normalizeLmStudioDelta(delta)
+    if (normalized.reasoning) emitText('reasoning', normalized.reasoning)
+    if (normalized.content) {
+      for (const part of tagDecoder.push(normalized.content)) emitText(part.type, part.text)
+    }
+
+    const fragments = delta.tool_calls ?? (delta.function_call ? [{
+      index: 0,
+      id: delta.id,
+      type: 'function',
+      function: delta.function_call,
+    }] : [])
+    fragments.forEach((fragment, index) => appendToolCallDelta(toolCalls, fragment, index))
+  }
+
+  while (true) {
+    const { value, done } = await reader.read()
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
+    const blocks = buffer.split(/\r?\n\r?\n/)
+    buffer = blocks.pop() || ''
+    blocks.forEach(processEventBlock)
+    if (done) break
+  }
+  if (buffer.trim()) processEventBlock(buffer)
+  tagDecoder.flush().forEach((part) => emitText(part.type, part.text))
+
+  return {
+    role: 'assistant',
+    content,
+    ...(reasoning ? { reasoning_content: reasoning } : {}),
+    tool_calls: [...toolCalls.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([index, call]) => ({
+        ...call,
+        id: call.id || `tool-call-${turn}-${index}`,
+      })),
+  }
+}
+
+function toolCallDetail(call) {
+  try {
+    const args = JSON.parse(call.function.arguments || '{}')
+    if (call.function.name === 'load_skill') return args.skill_id || args.skillId || 'Requested skill'
+    const values = Object.values(args)
+      .filter((value) => ['string', 'number', 'boolean'].includes(typeof value))
+      .map(String)
+      .filter(Boolean)
+    return compactText(values.join(' · '), 180) || 'Case-scoped request'
+  } catch {
+    return 'Case-scoped request'
+  }
+}
+
+export async function runCaseAgent({ caseItem, prompt, baseUrl, model, onEvent, signal }) {
   const feedback = getReviewerFeedback(caseItem.id)
   const messages = [
     { role: 'system', content: agentInstructions(caseItem) },
@@ -1207,12 +1433,37 @@ export async function runCaseAgent({ caseItem, prompt, baseUrl, model }) {
   const session = { loadedSkills: new Set(), describedLayers: new Set() }
 
   for (let turn = 0; turn < MAX_AGENT_TURNS; turn += 1) {
-    const message = await callLmStudio({ baseUrl, model, messages, tools })
+    if (signal?.aborted) throw new DOMException('The agent stream was cancelled.', 'AbortError')
+    const displayTurn = turn + 1
+    onEvent?.({
+      id: `model-${displayTurn}`,
+      type: 'model',
+      phase: 'started',
+      turn: displayTurn,
+      model,
+      title: `Model turn ${displayTurn}`,
+      detail: 'Reading the case and deciding which evidence or operation is needed.',
+    })
+    const message = onEvent
+      ? await callLmStudioStreaming({ baseUrl, model, messages, tools, onEvent, turn: displayTurn, signal })
+      : await callLmStudio({ baseUrl, model, messages, tools })
     const toolCalls = message.tool_calls ?? []
     messages.push({
       role: 'assistant',
       content: message.content ?? '',
+      ...(message.reasoning_content ? { reasoning_content: message.reasoning_content } : {}),
       tool_calls: toolCalls,
+    })
+    onEvent?.({
+      id: `model-${displayTurn}`,
+      type: 'model',
+      phase: 'completed',
+      turn: displayTurn,
+      model,
+      title: `Model turn ${displayTurn}`,
+      detail: toolCalls.length
+        ? `Requested ${toolCalls.length} controlled ${toolCalls.length === 1 ? 'call' : 'calls'}.`
+        : 'Returned the investigation summary.',
     })
 
     if (!toolCalls.length) {
@@ -1226,12 +1477,32 @@ export async function runCaseAgent({ caseItem, prompt, baseUrl, model }) {
 
     for (const call of toolCalls) {
       let result
+      const eventType = call.function.name === 'load_skill' ? 'skill' : 'tool'
+      onEvent?.({
+        id: call.id,
+        type: eventType,
+        phase: 'started',
+        turn: displayTurn,
+        name: call.function.name,
+        title: eventType === 'skill' ? 'Loading skill on demand' : call.function.name,
+        detail: toolCallDetail(call),
+      })
       try {
         result = await executeTool(call, caseItem, model, session)
       } catch (error) {
         result = { error: error.message }
       }
-      toolEvents.push({ name: call.function.name, summary: toolSummary(call.function.name, result) })
+      const summary = toolSummary(call.function.name, result)
+      toolEvents.push({ name: call.function.name, summary })
+      onEvent?.({
+        id: call.id,
+        type: eventType,
+        phase: result?.error ? 'error' : 'completed',
+        turn: displayTurn,
+        name: call.function.name,
+        title: eventType === 'skill' ? 'Skill loaded on demand' : call.function.name,
+        detail: summary,
+      })
       messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) })
     }
   }
@@ -1276,6 +1547,95 @@ async function health(baseUrl, model) {
   return { provider: 'LM Studio', baseUrl, model, available: response.ok && models.includes(model), models }
 }
 
+function qaInvestigationPrompt(prepared) {
+  const skillDirection = prepared.issue.id.startsWith('MADV_QA_AP_')
+    ? 'Load MAD QA AP and MAD Schema Intelligence because this is an address-point QA view.'
+    : 'Load MAD Schema Intelligence because the conclusion depends on MAD table relationships.'
+  return [
+    `The reviewer selected statewide QA category ${prepared.issue.id}: ${prepared.issue.description}.`,
+    `The daily report count is ${prepared.issue.count.toLocaleString()}.`,
+    skillDirection,
+    'After loading the named skill, call get_qa_investigation_packet with the relationship subject that fits this view. It returns the case, record evidence, approved relationship context, and town selection together.',
+    'If the local evidence confirms the controlled logical correction, stage it for human review and validate it.',
+    'A missing stable target identifier blocks publishing, not a review-only draft. Stage the controlled review proposal when the fix is otherwise confirmed, then say exactly why its Accept action is disabled.',
+    'If record-level rows themselves are missing, withhold the draft and say what production connection is required.',
+    'Do not use public GeoServer evidence for this investigation and do not claim that MAD was edited.',
+  ].join(' ')
+}
+
+async function investigateQaCategory({ viewId, baseUrl, model, onEvent, signal }) {
+  onEvent?.({
+    id: 'qa-evidence',
+    type: 'status',
+    phase: 'started',
+    title: 'Read QA evidence',
+    detail: viewId,
+  })
+  const prepared = await prepareQaInvestigation(viewId)
+  onEvent?.({
+    id: 'qa-evidence',
+    type: 'status',
+    phase: 'completed',
+    title: 'QA evidence ready',
+    detail: `${prepared.issue.count.toLocaleString()} statewide results · ${prepared.adapterResult.cases?.length ?? 0} local test ${prepared.adapterResult.cases?.length === 1 ? 'case' : 'cases'}`,
+  })
+  onEvent?.({
+    id: 'town-resolution',
+    type: 'status',
+    phase: prepared.caseItem.townExtractSummary ? 'completed' : 'error',
+    title: prepared.caseItem.townExtractSummary ? 'Issue town resolved' : 'No town extract resolved',
+    detail: prepared.caseItem.townExtractSummary
+      ? `${prepared.caseItem.townExtractSummary.town} · ADDRESS_TOWN_ID ${prepared.caseItem.townExtractSummary.townId}`
+      : 'Record-level production QA access is required before a town can be selected.',
+  })
+
+  const result = await runCaseAgent({
+    caseItem: prepared.caseItem,
+    prompt: qaInvestigationPrompt(prepared),
+    baseUrl,
+    model,
+    onEvent,
+    signal,
+  })
+  const payload = {
+    issue: prepared.issue,
+    localResultCount: prepared.adapterResult.cases?.length ?? 0,
+    caseItem: prepared.caseItem,
+    townExtractUrl: prepared.caseItem.townExtractSummary
+      ? `/api/towns/${prepared.caseItem.townExtractSummary.townId}/extract`
+      : null,
+    provider: 'LM Studio',
+    model,
+    ...result,
+    proposals: getProposalLineage(prepared.caseItem.id),
+  }
+  onEvent?.({
+    id: 'agent-result',
+    type: 'status',
+    phase: 'completed',
+    title: payload.draft?.changes?.length ? 'Proposal staged for review' : 'Investigation complete',
+    detail: payload.draft?.changes?.length
+      ? `${payload.draft.changes.length} controlled ${payload.draft.changes.length === 1 ? 'change' : 'changes'} prepared`
+      : 'No controlled change was staged.',
+  })
+  return payload
+}
+
+function startEventStream(response) {
+  response.writeHead(200, {
+    'content-type': 'text/event-stream; charset=utf-8',
+    'cache-control': 'no-cache, no-transform',
+    connection: 'keep-alive',
+    'x-accel-buffering': 'no',
+  })
+  response.flushHeaders?.()
+}
+
+function sendEventStream(response, event, payload) {
+  if (response.destroyed || response.writableEnded) return
+  response.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`)
+}
+
 export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAULT_LM_STUDIO_URL, model = process.env.LM_STUDIO_MODEL || DEFAULT_MODEL } = {}) {
   return createServer(async (request, response) => {
     const url = new URL(request.url, `http://${request.headers.host || '127.0.0.1'}`)
@@ -1300,40 +1660,57 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
         && pathParts[1] === 'qa'
         && pathParts[2] === 'issues'
         && pathParts[3]
+        && pathParts[4] === 'investigate-stream'
+      ) {
+        startEventStream(response)
+        const abortController = new AbortController()
+        response.on('close', () => abortController.abort())
+        const heartbeat = setInterval(() => {
+          if (!response.destroyed && !response.writableEnded) response.write(': keep-alive\n\n')
+        }, 15_000)
+        try {
+          sendEventStream(response, 'activity', {
+            id: 'session',
+            type: 'status',
+            phase: 'started',
+            title: 'Local agent connected',
+            detail: model,
+            model,
+          })
+          const result = await investigateQaCategory({
+            viewId: pathParts[3],
+            baseUrl,
+            model,
+            onEvent: (event) => sendEventStream(response, 'activity', event),
+            signal: abortController.signal,
+          })
+          sendEventStream(response, 'complete', result)
+        } catch (error) {
+          if (error.name !== 'AbortError') {
+            sendEventStream(response, 'error', {
+              message: error.message || 'Local agent request failed.',
+            })
+          }
+        } finally {
+          clearInterval(heartbeat)
+          if (!response.writableEnded) response.end()
+        }
+        return undefined
+      }
+
+      if (
+        request.method === 'POST'
+        && pathParts[0] === 'api'
+        && pathParts[1] === 'qa'
+        && pathParts[2] === 'issues'
+        && pathParts[3]
         && pathParts[4] === 'investigate'
       ) {
-        const prepared = await prepareQaInvestigation(pathParts[3])
-        const skillDirection = prepared.issue.id.startsWith('MADV_QA_AP_')
-          ? 'Load MAD QA AP and MAD Schema Intelligence because this is an address-point QA view.'
-          : 'Load MAD Schema Intelligence because the conclusion depends on MAD table relationships.'
-        const prompt = [
-          `The reviewer selected statewide QA category ${prepared.issue.id}: ${prepared.issue.description}.`,
-          `The daily report count is ${prepared.issue.count.toLocaleString()}.`,
-          skillDirection,
-          'After loading the named skill, call get_qa_investigation_packet with the relationship subject that fits this view. It returns the case, record evidence, approved relationship context, and town selection together.',
-          'If the local evidence confirms the controlled logical correction, stage it for human review and validate it.',
-          'A missing stable target identifier blocks publishing, not a review-only draft. Stage the controlled review proposal when the fix is otherwise confirmed, then say exactly why its Accept action is disabled.',
-          'If record-level rows themselves are missing, withhold the draft and say what production connection is required.',
-          'Do not use public GeoServer evidence for this investigation and do not claim that MAD was edited.',
-        ].join(' ')
-        const result = await runCaseAgent({
-          caseItem: prepared.caseItem,
-          prompt,
+        return sendJson(response, 200, await investigateQaCategory({
+          viewId: pathParts[3],
           baseUrl,
           model,
-        })
-        return sendJson(response, 200, {
-          issue: prepared.issue,
-          localResultCount: prepared.adapterResult.cases?.length ?? 0,
-          caseItem: prepared.caseItem,
-          townExtractUrl: prepared.caseItem.townExtractSummary
-            ? `/api/towns/${prepared.caseItem.townExtractSummary.townId}/extract`
-            : null,
-          provider: 'LM Studio',
-          model,
-          ...result,
-          proposals: getProposalLineage(prepared.caseItem.id),
-        })
+        }))
       }
 
       if (

@@ -25,6 +25,20 @@ For manual development:
 
 The bridge listens only on `127.0.0.1:8787`; Vite proxies browser `/api/*` requests to it. The browser never connects directly to LM Studio on port 1234.
 
+## Live investigation stream
+
+Selecting a QA category opens a center-screen activity transcript instead of a static loading card. `POST /api/qa/issues/:viewId/investigate-stream` returns server-sent events for:
+
+- model turns and final output;
+- reasoning/thinking text when the active model exposes it;
+- on-demand skill loads;
+- controlled tool calls and their bounded result summaries; and
+- QA-evidence, town-resolution, proposal, and town-extract phases.
+
+The stream adapter is model-name agnostic. It recognizes OpenAI-compatible `reasoning_content`, `reasoning`, `thinking`, and `analysis` deltas, typed reasoning content blocks, and common `<think>`, `<analysis>`, or `<reasoning>` template tags. A model that exposes no reasoning still streams its ordinary output and tool activity. The chosen model must still support the tool-calling behavior required by the QA agent.
+
+The browser receives only display-safe summaries for tools; full tool results remain inside the server-side agent loop. The stream sends keep-alives during long local generations and cancels the upstream LM Studio request when the reviewer leaves the stream.
+
 ## Configuration
 
 The defaults are intentionally local:

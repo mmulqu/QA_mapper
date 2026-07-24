@@ -12,8 +12,9 @@ The workbench now starts from the supplied daily MAD QA report instead of openin
 4. The bridge narrows the selected view through the local read-only adapter.
 5. When issue records are available, the agent reads the record evidence and town-resolution evidence before staging a controlled proposal.
 6. The selected town's vectors load in Leaflet with the MassGIS basemap or 2025 imagery.
-7. A reviewer can click an address, centroid, structure, parcel, road, or community polygon to open its attributes. Preset relates open the associated Master Address, lookup, structure, parcel, and address-variant records.
-8. The red/current and green/proposed change sheet remains the only place where a proposal can be accepted or rejected.
+7. A reviewer can click one location to query every enabled vector layer there. The result list can include an address, centroid, structure, parcel, road, and community polygon instead of stopping at the topmost polygon.
+8. Choosing a result opens its full attributes and highlights that geometry on the map. The back arrow returns through related-record selections and ultimately to the original click-result list. Preset relates open the associated Master Address, lookup, structure, parcel, and address-variant records.
+9. The red/current and green/proposed change sheet remains the only place where a proposal can be accepted or rejected.
 
 ## Local Rockport proof case
 
@@ -34,7 +35,8 @@ The proposal is reviewable but cannot be accepted from this export because `MAD_
 ## Local API
 
 - `GET /api/qa/issues` — grouped, non-zero QA catalogue.
-- `POST /api/qa/issues/:viewId/investigate` — narrow the selected category, run the local agent, resolve a town, and stage a controlled draft when supported.
+- `POST /api/qa/issues/:viewId/investigate-stream` — narrow the selected category while streaming model output, optional exposed reasoning, on-demand skills, and controlled tool calls; resolve a town and stage a controlled draft when supported.
+- `POST /api/qa/issues/:viewId/investigate` — non-streaming compatibility endpoint for scripted clients.
 - `GET /api/towns/:townId/extract` — read-only town vector layers for Leaflet.
 - `GET /api/towns/:townId/records?key=:recordKey` — one feature's full attributes and bounded preset related records.
 - Existing `/api/cases/:caseId/*` endpoints continue to provide agent chat, proposal lineage, reject/revise, and protected publisher handoff behavior.

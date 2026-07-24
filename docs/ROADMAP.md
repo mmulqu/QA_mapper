@@ -7,11 +7,13 @@ This is the running implementation record for the workbench. Check off a gate on
 ## Current foundation
 
 - [x] Leaflet review workspace with a persistent case list, vector feature selection, readable attribute tables, and preset record relates.
+- [x] Map-level identify workflow that returns all overlapping features from enabled town layers, highlights the chosen geometry, and preserves back navigation to earlier records and the original result list.
 - [x] Safe synthetic case snapshots that demonstrate the address point, Master Address, structure, structure lookup, variant, parcel, and road relationships.
 - [x] Human accept/reject review controls on the complete diff: acceptance freezes a server-side ArcPy publisher handoff; rejection becomes case-scoped revision context for the local agent.
 - [x] Local append-only proposal registry: unique proposal IDs, parent/descendant lineage, category, summary, reviewer feedback, status events, and LM Studio model IDs in `.runtime/proposal-history.csv`.
 - [x] On-demand agent change sheet: every existing source value is red, every draft value is green, and new address records are green-only.
 - [x] Localhost-only LM Studio agent bridge with case-scoped read tools, controlled fixture-draft staging, validation, and a map-side agent panel.
+- [x] Model-agnostic live investigation transcript in the center workspace, with exposed reasoning/output plus tagged skill and tool activity.
 - [x] On-demand MAD QA AP, MAD schema, and public MassGIS GeoServer skills; the bridge exposes only bounded, read-only schema and GeoServer evidence tools.
 - [x] Public MassGIS basemap and 2025 natural-color imagery tile services in Leaflet.
 - [x] Parse the supplied daily QA report into data-category buckets and show only non-zero checks.
@@ -106,6 +108,7 @@ Codex can already read and change local files in this workspace, including synth
 - [x] Add a local LM Studio bridge backed by the synthetic case fixtures. It exposes `get_case`, `get_feature`, `get_related`, controlled fixture-draft staging, and draft validation on localhost only.
 - [x] Exercise the bridge with the local `qwen3-4b-thinking-2507` model: explain a case, stage the eligible draft, and withhold an evidence-only draft.
 - [x] Add an allow-listed, on-demand skill loader. The model sees only a compact skill index and loads a full `SKILL.md` only when a prompt explicitly calls for it.
+- [x] Stream automatic category investigations over a localhost event channel; normalize common LM Studio reasoning/content formats without tying the UI to one model ID.
 - [ ] Replace fixture-draft staging with `stage_draft_operation` against the resettable relational Gate 1 sandbox.
 - [ ] Exercise each initial skill as Codex against resettable fixtures.
 - [ ] Record every tool call, proposed operation, validator result, and human decision in the test audit trail.

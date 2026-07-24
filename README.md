@@ -9,9 +9,11 @@ The current app focuses on the geometry-and-record inspection loop without conne
 - resolve the affected town through MAD community/town identifiers and load that town's extract;
 - view address-point, structure, parcel, road, and nearby-address vectors on a Leaflet map;
 - switch between the public MassGIS basemap and MassGIS 2025 natural-color imagery, and control vector visibility;
-- click a vector to open its full attribute table;
+- click the map to list every feature from the enabled vector layers at that location, then open its full attribute table;
+- keep the selected feature highlighted on the map and use the attribute-table back arrow to return to the prior feature or click-result list;
 - follow preset relations between address points, Master Address, MAD structure, structure lookup, address variants, and parcel;
 - ask a local LM Studio agent to explain the selected evidence or stage its controlled review draft;
+- watch the automatic investigation live in the center workspace, including model output and tagged on-demand skill/tool activity;
 - inspect staged field changes as red/current and green/proposed values;
 - accept an eligible address-point proposal locally in the training workspace.
 

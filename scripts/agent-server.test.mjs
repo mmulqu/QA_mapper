@@ -4,11 +4,14 @@ import { cases } from '../src/data/cases.js'
 import {
   createFixtureDraft,
   createPublisherHandoff,
+  createThinkingTagDecoder,
   buildProposalLineage,
   getReviewerFeedback,
   getSkillIndex,
   loadSkill,
+  normalizeLmStudioDelta,
   recordReviewerRejection,
+  runCaseAgent,
   validateDraft,
 } from './agent-server.mjs'
 
@@ -33,6 +36,106 @@ test('loads the full allow-listed skill only on request', () => {
   assert.match(apSkill.instructions, /POINT_TYPE/)
   assert.match(schemaSkill.instructions, /relationship-aware/)
   assert.match(geoServerSkill.instructions, /GeoServer/)
+})
+
+test('normalizes reasoning and output without depending on a model name', () => {
+  assert.deepEqual(
+    normalizeLmStudioDelta({
+      reasoning_content: 'Checking the relationship.',
+      content: 'The duplicate is confirmed.',
+    }),
+    {
+      reasoning: 'Checking the relationship.',
+      content: 'The duplicate is confirmed.',
+    },
+  )
+  assert.deepEqual(
+    normalizeLmStudioDelta({
+      content: [
+        { type: 'thinking', text: 'Inspecting rows.' },
+        { type: 'text', text: 'Ready for review.' },
+      ],
+    }),
+    {
+      reasoning: 'Inspecting rows.',
+      content: 'Ready for review.',
+    },
+  )
+})
+
+test('recognizes split thinking tags used by local model templates', () => {
+  const decoder = createThinkingTagDecoder()
+  const parts = [
+    ...decoder.push('<thi'),
+    ...decoder.push('nk>Compare two rows.</think>Final'),
+    ...decoder.push(' answer.'),
+    ...decoder.flush(),
+  ]
+
+  assert.deepEqual(parts, [
+    { type: 'reasoning', text: 'Compare two rows.' },
+    { type: 'content', text: 'Final' },
+    { type: 'content', text: ' answer.' },
+  ])
+})
+
+test('streams generic model output and tags on-demand skill calls', async () => {
+  const originalFetch = globalThis.fetch
+  const encoder = new TextEncoder()
+  const streamedResponse = (events) => new Response(new ReadableStream({
+    start(controller) {
+      events.forEach((payload) => {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`))
+      })
+      controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+      controller.close()
+    },
+  }), { headers: { 'content-type': 'text/event-stream' } })
+  let requestCount = 0
+  globalThis.fetch = async () => {
+    requestCount += 1
+    if (requestCount === 1) {
+      return streamedResponse([
+        { choices: [{ delta: { reasoning_content: 'Checking which runbook applies.' } }] },
+        {
+          choices: [{
+            delta: {
+              tool_calls: [{
+                index: 0,
+                id: 'call-skill',
+                type: 'function',
+                function: { name: 'load_skill', arguments: '{"skill_id":"qa-evidence-brief"}' },
+              }],
+            },
+          }],
+        },
+      ])
+    }
+    return streamedResponse([
+      { choices: [{ delta: { content: '**Skill ready.**' } }] },
+    ])
+  }
+
+  try {
+    const activity = []
+    const result = await runCaseAgent({
+      caseItem: cases[0],
+      prompt: 'Use the QA Evidence Brief skill.',
+      baseUrl: 'http://local-model.test/v1',
+      model: 'different-local-model',
+      onEvent: (event) => activity.push(event),
+    })
+
+    assert.equal(result.reply, '**Skill ready.**')
+    assert.equal(result.toolEvents[0].name, 'load_skill')
+    assert.ok(activity.some((event) => event.type === 'reasoning_delta'))
+    assert.ok(activity.some((event) => event.type === 'output_delta'))
+    assert.ok(activity.some((event) => event.type === 'skill' && event.phase === 'started'))
+    assert.ok(activity.some((event) => event.type === 'skill' && event.phase === 'completed'))
+    assert.ok(activity.every((event) => !event.model || event.model === 'different-local-model'))
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })
 
 test('creates a review-only fixture draft with source preconditions', () => {
