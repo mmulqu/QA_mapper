@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAD QA MSN"
+  short_description: "Master-street QA rules and reviewer memory"
+  default_prompt: "Use $mad-qa-msn to investigate this MADV_QA_MSN issue."

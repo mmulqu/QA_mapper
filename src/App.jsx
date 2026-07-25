@@ -26,6 +26,7 @@ import AgentPanel from './components/AgentPanel'
 import AgentActivityStream from './components/AgentActivityStream'
 import ChangeDiffInspector from './components/ChangeDiffInspector'
 import MapWorkspace from './components/MapWorkspace'
+import ProposalAuditControl from './components/ProposalAuditControl'
 import RejectDraftDialog from './components/RejectDraftDialog'
 import { MAP_SERVICES } from './config/mapServices'
 import { cases } from './data/cases'
@@ -279,15 +280,18 @@ function CaseDocket({
         </details>
       </div>
 
-      <footer className="docket-footer-simple">
-        <CircleDot size={15} />
-        <span>
-          {activeDataView === 'qa'
-            ? 'QA report · town extracts are read-only'
-            : activeDataView === 'public'
-              ? 'Public export · no edit actions'
-              : 'Training workspace · vector export'}
-        </span>
+      <footer className="docket-footer">
+        <div className="docket-workspace-status">
+          <CircleDot size={15} />
+          <span>
+            {activeDataView === 'qa'
+              ? 'QA report · town extracts are read-only'
+              : activeDataView === 'public'
+                ? 'Public export · no edit actions'
+                : 'Training workspace · vector export'}
+          </span>
+        </div>
+        <ProposalAuditControl />
       </footer>
     </aside>
   )

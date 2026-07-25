@@ -1,8 +1,14 @@
-import { MessageSquareWarning, X } from 'lucide-react'
+import { BrainCircuit, LoaderCircle, MessageSquareWarning, X } from 'lucide-react'
 import { useState } from 'react'
 
 export default function RejectDraftDialog({ caseItem, onCancel, onSubmit, submitting, error }) {
   const [comment, setComment] = useState('')
+  const memoryTarget = caseItem.skillMemory ?? {
+    categoryCode: 'AP',
+    skillName: 'MAD QA AP',
+    skillFile: 'agent-skills\\mad-qa-ap\\SKILL.md',
+    memoryFile: 'agent-skills\\mad-qa-ap\\references\\reviewer-memory.md',
+  }
 
   const submit = (event) => {
     event.preventDefault()
@@ -24,7 +30,15 @@ export default function RejectDraftDialog({ caseItem, onCancel, onSubmit, submit
         </header>
 
         <form onSubmit={submit}>
-          <p>Your feedback will be included in the local agentâ€™s next case-scoped review for {caseItem.address}.</p>
+          <p>The local agent will turn your correction into a reusable, category-specific lesson. Nothing is written unless its structured memory call passes validation.</p>
+          <div className="review-memory-target">
+            <BrainCircuit size={18} aria-hidden="true" />
+            <span>
+              <strong>{memoryTarget.categoryCode} agent memory target</strong>
+              <small>{memoryTarget.skillFile}</small>
+              <code>{memoryTarget.memoryFile}</code>
+            </span>
+          </div>
           <label htmlFor="rejection-comment">Reviewer feedback</label>
           <textarea
             id="rejection-comment"
@@ -37,11 +51,21 @@ export default function RejectDraftDialog({ caseItem, onCancel, onSubmit, submit
             disabled={submitting}
           />
           <span className="review-reject-count">{comment.length}/1200</span>
+          {submitting ? (
+            <div className="review-memory-writing" role="status" aria-live="polite">
+              <LoaderCircle className="agent-spinner" size={19} aria-hidden="true" />
+              <span>
+                <strong>Local agent is authoring {memoryTarget.categoryCode} memory</strong>
+                <small>Generating and validating one structured skill lesson before writing.</small>
+                <code>{memoryTarget.memoryFile}</code>
+              </span>
+            </div>
+          ) : null}
           {error ? <div className="review-reject-error" role="alert">{error}</div> : null}
           <footer>
             <button type="button" className="review-cancel" onClick={onCancel} disabled={submitting}>Cancel</button>
             <button type="submit" className="review-reject-submit" disabled={submitting || comment.trim().length < 5}>
-              {submitting ? 'Saving feedbackâ€¦' : 'Reject and request revision'}
+              {submitting ? `Agent authoring ${memoryTarget.categoryCode} memory…` : 'Reject and teach agent'}
             </button>
           </footer>
         </form>

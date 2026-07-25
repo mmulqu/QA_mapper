@@ -1,6 +1,6 @@
 import React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
 
@@ -175,6 +175,49 @@ describe('MAD QA feature explorer', () => {
     expect(screen.getByRole('heading', { name: 'Select a non-zero QA check' })).toBeInTheDocument()
     expect(screen.getByText('Structure lookup records that are functionally duplicative')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Attributes' })).not.toBeInTheDocument()
+  })
+
+  it('shows the local proposal audit path and opens it through the protected bridge action', async () => {
+    vi.stubGlobal('fetch', vi.fn((url) => {
+      if (url === '/api/qa/issues') {
+        return Promise.resolve({ ok: true, json: async () => qaCatalog })
+      }
+      if (url === '/api/audit/proposal-history') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            kind: 'mad-proposal-audit-csv',
+            relativePath: '.runtime\\proposal-history.csv',
+            path: 'C:\\workspace\\.runtime\\proposal-history.csv',
+            eventCount: 7,
+          }),
+        })
+      }
+      if (url === '/api/audit/proposal-history/open') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            opened: true,
+            message: 'Proposal audit CSV opened in Windows File Explorer.',
+            relativePath: '.runtime\\proposal-history.csv',
+            eventCount: 7,
+          }),
+        })
+      }
+      return Promise.resolve({ ok: false, json: async () => ({}) })
+    }))
+    const user = userEvent.setup()
+    render(<App />)
+
+    expect(await screen.findByText('.runtime\\proposal-history.csv')).toBeInTheDocument()
+    expect(screen.getByText('7 events recorded')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Open proposal audit in Windows File Explorer/ }))
+
+    expect(await screen.findByText('Proposal audit CSV opened in Windows File Explorer.')).toBeInTheDocument()
+    expect(globalThis.fetch).toHaveBeenCalledWith('/api/audit/proposal-history/open', {
+      method: 'POST',
+      headers: { 'x-mad-local-action': 'open-proposal-audit' },
+    })
   })
 
   it('investigates a selected QA check, loads its town extract, and opens real attributes', async () => {
@@ -507,18 +550,10 @@ describe('MAD QA feature explorer', () => {
   })
 
   it('collects a rejection comment and places it in the local agent revision context', async () => {
+    let finishReject
     vi.stubGlobal('fetch', vi.fn((url) => {
       if (url === '/test-data/brookline-mad-snapshot.json') return Promise.resolve({ ok: false })
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({
-          rejection: {
-            id: 'reject-test',
-            status: 'active',
-            comment: 'Use the driveway access point instead of the east entrance.',
-          },
-        }),
-      })
+      return new Promise((resolve) => { finishReject = resolve })
     }))
     const user = userEvent.setup()
     render(<App />)
@@ -527,12 +562,44 @@ describe('MAD QA feature explorer', () => {
     await user.click(screen.getByRole('button', { name: 'Show agent diff' }))
     await user.click(screen.getByRole('button', { name: 'Reject and add feedback' }))
     expect(screen.getByRole('heading', { name: 'What needs to change?' })).toBeInTheDocument()
+    expect(screen.getByText('AP agent memory target')).toBeInTheDocument()
+    expect(screen.getByText('agent-skills\\mad-qa-ap\\SKILL.md')).toBeInTheDocument()
+    expect(screen.getByText('agent-skills\\mad-qa-ap\\references\\reviewer-memory.md')).toBeInTheDocument()
 
     await user.type(screen.getByRole('textbox', { name: 'Reviewer feedback' }), 'Use the driveway access point instead of the east entrance.')
-    await user.click(screen.getByRole('button', { name: 'Reject and request revision' }))
+    await user.click(screen.getByRole('button', { name: 'Reject and teach agent' }))
+    expect(screen.getByText('Local agent is authoring AP memory')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Agent authoring AP memory…' })).toBeDisabled()
+
+    await act(async () => {
+      finishReject({
+        ok: true,
+        json: async () => ({
+          rejection: {
+            id: 'reject-test',
+            status: 'active',
+            comment: 'Use the driveway access point instead of the east entrance.',
+            memoryUpdate: {
+              written: true,
+              status: 'written',
+              categoryCode: 'AP',
+              memoryFile: 'agent-skills\\mad-qa-ap\\references\\reviewer-memory.md',
+              agentEntry: {
+                title: 'Verify driveway access before moving a point',
+                lesson: 'Use imagery-confirmed access evidence rather than inferring an entrance from the footprint.',
+              },
+            },
+          },
+        }),
+      })
+    })
 
     expect(await screen.findByText('Reviewer feedback is in context')).toBeInTheDocument()
     expect(screen.getByText('Use the driveway access point instead of the east entrance.')).toBeInTheDocument()
+    expect(screen.getByText('AP lesson authored and written')).toBeInTheDocument()
+    expect(screen.getByText('Verify driveway access before moving a point')).toBeInTheDocument()
+    expect(screen.getByText(/Use imagery-confirmed access evidence/)).toBeInTheDocument()
+    expect(screen.getByText('agent-skills\\mad-qa-ap\\references\\reviewer-memory.md')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Review the reviewer feedback and propose a revised draft/ })).toBeInTheDocument()
     expect(globalThis.fetch).toHaveBeenCalledWith('/api/cases/MAD-2026-1842/reject', expect.objectContaining({ method: 'POST' }))
   })

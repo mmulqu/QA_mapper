@@ -2,31 +2,58 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { cases } from '../src/data/cases.js'
 import {
+  authorReviewerSkillMemory,
   createFixtureDraft,
   createPublisherHandoff,
   createThinkingTagDecoder,
   buildProposalLineage,
+  getProposalAuditInfo,
   getReviewerFeedback,
   getSkillIndex,
   loadSkill,
   normalizeLmStudioDelta,
+  openProposalAuditInFileExplorer,
   recordReviewerRejection,
   runCaseAgent,
   validateDraft,
 } from './agent-server.mjs'
 
+test('reports the fixed local proposal audit CSV without accepting a client path', () => {
+  const info = getProposalAuditInfo()
+
+  assert.equal(info.kind, 'mad-proposal-audit-csv')
+  assert.equal(info.relativePath, '.runtime\\proposal-history.csv')
+  assert.match(info.path, /[\\/]\.runtime[\\/]proposal-history\.csv$/)
+  assert.equal(Number.isInteger(info.eventCount), true)
+})
+
+test('does not launch a desktop file manager on unsupported platforms', async () => {
+  let launched = false
+  const result = await openProposalAuditInFileExplorer({
+    platform: 'linux',
+    spawnProcess: () => { launched = true },
+  })
+
+  assert.equal(launched, false)
+  assert.equal(result.opened, false)
+  assert.match(result.message, /Open .*proposal-history\.csv/)
+})
+
 test('keeps skill instructions out of the default skill index', () => {
   const skills = getSkillIndex()
   const skill = skills.find((item) => item.id === 'qa-evidence-brief')
 
-  assert.equal(skills.length, 4)
+  assert.equal(skills.length, 14)
   assert.equal(skill.id, 'qa-evidence-brief')
+  assert.equal(skills.some((item) => item.id === 'mad-qa-asl'), true)
+  assert.equal(skills.some((item) => item.id === 'mad-qa-brv'), true)
   assert.equal('instructions' in skill, false)
 })
 
 test('loads the full allow-listed skill only on request', () => {
   const evidenceSkill = loadSkill('qa-evidence-brief')
   const apSkill = loadSkill('mad-qa-ap')
+  const aslSkill = loadSkill('mad-qa-asl')
   const schemaSkill = loadSkill('mad-schema-intelligence')
   const geoServerSkill = loadSkill('massgis-geoserver')
 
@@ -34,8 +61,49 @@ test('loads the full allow-listed skill only on request', () => {
   assert.match(evidenceSkill.instructions, /Required evidence/)
   assert.match(evidenceSkill.instructions, /stage_fixture_draft/)
   assert.match(apSkill.instructions, /POINT_TYPE/)
+  assert.equal(aslSkill.memory.skillId, 'mad-qa-asl')
+  assert.match(aslSkill.memory.memoryFile, /mad-qa-asl\\references\\reviewer-memory\.md$/)
   assert.match(schemaSkill.instructions, /relationship-aware/)
   assert.match(geoServerSkill.instructions, /GeoServer/)
+})
+
+test('requires the local model to author one structured category memory tool call', async () => {
+  const draft = createFixtureDraft(cases[0], 'Initial point placement proposal.')
+  let modelRequest
+  const memory = await authorReviewerSkillMemory({
+    caseItem: cases[0],
+    draft,
+    reviewerFeedback: 'Use the verified driveway access rather than guessing an entrance from the footprint.',
+    baseUrl: 'http://127.0.0.1:1234/v1',
+    model: 'local-test-model',
+    requestModel: async (request) => {
+      modelRequest = request
+      return {
+        tool_calls: [{
+          id: 'memory-call-1',
+          type: 'function',
+          function: {
+            name: 'write_category_skill_memory',
+            arguments: JSON.stringify({
+              title: 'Verify access geometry before moving a point',
+              lesson: 'Use observed access evidence when choosing between a driveway and a footprint-derived entrance.',
+              applies_when: ['A proposed point move depends on selecting an entrance or access location.'],
+              required_checks: ['Inspect the available imagery and vector access evidence before selecting geometry.'],
+              avoid: 'Do not infer an entrance from the building footprint alone.',
+              confidence: 'medium',
+            }),
+          },
+        }],
+      }
+    },
+  })
+
+  assert.equal(modelRequest.toolChoice, 'required')
+  assert.equal(modelRequest.tools.length, 1)
+  assert.match(modelRequest.messages[1].content, /verified driveway access/)
+  assert.equal(memory.skillId, 'mad-qa-ap')
+  assert.equal(memory.modelId, 'local-test-model')
+  assert.match(memory.agentEntry.lesson, /observed access evidence/)
 })
 
 test('normalizes reasoning and output without depending on a model name', () => {

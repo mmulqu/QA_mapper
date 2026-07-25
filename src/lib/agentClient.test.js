@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   acceptCaseDraft,
   askLocalAgent,
+  getProposalAuditInfo,
   getProposalLineage,
+  openProposalAuditInFileExplorer,
   readAgentEventStream,
   rejectCaseDraft,
 } from './agentClient'
@@ -53,6 +55,27 @@ describe('local agent client', () => {
 
     await expect(getProposalLineage('MAD-2026-1842')).resolves.toEqual([{ id: 'proposal-1' }])
     expect(fetchMock).toHaveBeenCalledWith('/api/cases/MAD-2026-1842/proposals')
+  })
+
+  it('loads and opens the fixed local proposal audit through protected endpoints', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ relativePath: '.runtime\\proposal-history.csv' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ opened: true }),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(getProposalAuditInfo()).resolves.toEqual({ relativePath: '.runtime\\proposal-history.csv' })
+    await expect(openProposalAuditInFileExplorer()).resolves.toEqual({ opened: true })
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/audit/proposal-history')
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/audit/proposal-history/open', {
+      method: 'POST',
+      headers: { 'x-mad-local-action': 'open-proposal-audit' },
+    })
   })
 
   it('reads model-agnostic activity and the final result from an event stream', async () => {

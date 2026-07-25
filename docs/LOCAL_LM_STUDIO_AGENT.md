@@ -93,9 +93,17 @@ The initial test skill is [QA Evidence Brief](../agent-skills/qa-evidence-brief/
 
 The three additional registered skills are [MAD QA AP](../agent-skills/mad-qa-ap/SKILL.md), [MAD Schema Intelligence](../agent-skills/mad-schema-intelligence/SKILL.md), and [MassGIS GeoServer](../agent-skills/massgis-geoserver/SKILL.md). For external evidence, ask: “Use MassGIS GeoServer to find public open-space polygons near this coordinate.” The expected sequence is `load_skill`, `massgis_search_layers`, `massgis_describe_layer`, then the bounded town or proximity lookup.
 
+## Category reviewer memory
+
+MAD category skills are registered for MA, AV, AP, APC, BRV, BSA, MSN, SNV, ESZ, SN, and ASL. Rejecting a proposal starts a separate LM Studio memory-authoring turn. The model receives the category skill, compact case/proposal evidence, and quoted human correction; its only available tool is the required `write_category_skill_memory` call. The structured lesson is appended to the matching category's `references\reviewer-memory.md` sidecar only after server validation.
+
+The model authors the lesson but cannot choose its path. The bridge routes the QA view through an exact allow-list, stamps the entry with its case, proposal, model, timestamp, and source feedback, deduplicates repeat submissions, and records a local JSONL audit event. Only the 12 most recent entries are injected, and only when that exact skill is loaded. The UI shows the active authoring state, target path, and generated lesson. See [SKILL_MEMORY.md](SKILL_MEMORY.md) for the complete contract.
+
 ## Local proposal registry
 
 Every staged fixture proposal receives a UUID-based `proposal-*` identifier. The local bridge appends proposal events to `.runtime/proposal-history.csv`: staged, rejected, and accepted. Each row carries the case ID, proposal and parent IDs, root proposal ID, category, concise edit summary, reviewer feedback when present, provider, and the exact LM Studio model ID.
+
+The persistent **Proposal audit CSV** control in the app shows that relative path and opens the fixed file selected in Windows File Explorer. The localhost endpoint accepts no client-supplied path and requires the app's explicit local-action header.
 
 When a reviewer rejects a proposal, the next eligible agent draft becomes its descendant. The agent is told to read the case-scoped proposal lineage before it proposes that revision. The diff sheet displays the lineage, including the rejected parent, its feedback, and the model used for each proposal. The file is local and ignored by Git; it is a lightweight audit aid, not the eventual production audit store.
 

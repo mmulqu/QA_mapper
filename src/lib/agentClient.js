@@ -28,6 +28,23 @@ export async function getProposalLineage(caseId) {
   return payload.proposals ?? []
 }
 
+export async function getProposalAuditInfo() {
+  const response = await fetch('/api/audit/proposal-history')
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || 'The proposal audit location could not be loaded.')
+  return payload
+}
+
+export async function openProposalAuditInFileExplorer() {
+  const response = await fetch('/api/audit/proposal-history/open', {
+    method: 'POST',
+    headers: { 'x-mad-local-action': 'open-proposal-audit' },
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || 'Windows File Explorer could not open the proposal audit.')
+  return payload
+}
+
 export async function getQaIssueCatalog() {
   const response = await fetch('/api/qa/issues')
   const payload = await response.json().catch(() => ({}))

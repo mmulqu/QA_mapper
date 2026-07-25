@@ -1,4 +1,4 @@
-import { Bot, CheckCircle2, LoaderCircle, Send, Sparkles, Wrench, X } from 'lucide-react'
+import { Bot, BrainCircuit, CheckCircle2, LoaderCircle, Send, Sparkles, Wrench, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -91,7 +91,31 @@ export default function AgentPanel({
           <div className="agent-review-feedback">
             <strong>Reviewer feedback is in context</strong>
             <p>{reviewerFeedback.comment}</p>
-            <small>The next request automatically includes this feedback so the agent can revise its draft.</small>
+            {reviewerFeedback.memoryUpdate ? (
+              <div className={`agent-memory-confirmation ${reviewerFeedback.memoryUpdate.status === 'unmapped' ? 'is-warning' : ''}`}>
+                <BrainCircuit size={16} aria-hidden="true" />
+                <span>
+                  <strong>
+                    {reviewerFeedback.memoryUpdate.written
+                      ? `${reviewerFeedback.memoryUpdate.categoryCode} lesson authored and written`
+                      : reviewerFeedback.memoryUpdate.status === 'already-recorded'
+                        ? 'Reviewer memory already recorded'
+                        : 'Case feedback saved without category memory'}
+                  </strong>
+                  {reviewerFeedback.memoryUpdate.agentEntry ? (
+                    <>
+                      <span className="agent-memory-lesson-title">{reviewerFeedback.memoryUpdate.agentEntry.title}</span>
+                      <span className="agent-memory-lesson">{reviewerFeedback.memoryUpdate.agentEntry.lesson}</span>
+                    </>
+                  ) : null}
+                  {reviewerFeedback.memoryUpdate.memoryFile
+                    ? <code>{reviewerFeedback.memoryUpdate.memoryFile}</code>
+                    : <small>{reviewerFeedback.memoryUpdate.message}</small>}
+                </span>
+              </div>
+            ) : (
+              <small>The next request automatically includes this feedback so the agent can revise its draft.</small>
+            )}
           </div>
         ) : null}
 
