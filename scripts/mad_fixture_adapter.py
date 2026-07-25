@@ -590,6 +590,21 @@ def build_fault_case(scenario: dict[str, Any]) -> dict[str, Any]:
     master_matches = find_row(master_addresses, "MASTER_ADD", str(master_address_id))
     master_street_matches = find_row(master_address_streets, "MASTER_ADD", str(master_address_id))
     variant_matches = find_row(address_variants, "MASTER_ADD", str(master_address_id))
+    flagged_variant_matches = find_row(address_variants, "ADDRESS_VA", variant_id)
+    flagged_variant = flagged_variant_matches.iloc[0] if not flagged_variant_matches.empty else None
+    flagged_point_id = scalar(flagged_variant.get("ADDRESS_PO")) if flagged_variant is not None else None
+    conflicting_point_master_matches = (
+        find_row(master_addresses, "ADDRESS_PO", str(flagged_point_id))
+        if flagged_point_id not in (None, "")
+        else master_addresses.iloc[0:0]
+    )
+    conflicting_point_master_street_matches = (
+        master_address_streets.loc[
+            master_address_streets["MASTER_ADD"].isin(conflicting_point_master_matches["MASTER_ADD"])
+        ].copy()
+        if not conflicting_point_master_matches.empty
+        else master_address_streets.iloc[0:0]
+    )
     lookup_matches = find_row(lookups, "ADDRESS_PO", address_point_id)
     range_matches = (
         find_row(ranges, "BASE_RANGE", str(subject["baseRangeId"]))
@@ -756,6 +771,11 @@ def build_fault_case(scenario: dict[str, Any]) -> dict[str, Any]:
                 "addressPoint": clean_properties(ap_matches.iloc[0]) if not ap_matches.empty else None,
                 "masterAddresses": [clean_properties(row) for _, row in master_matches.iterrows()],
                 "masterAddressStreet": [clean_properties(row) for _, row in master_street_matches.iterrows()],
+                "flaggedVariant": clean_properties(flagged_variant) if flagged_variant is not None else None,
+                "conflictingPointMasters": [clean_properties(row) for _, row in conflicting_point_master_matches.iterrows()],
+                "conflictingPointMasterStreet": [
+                    clean_properties(row) for _, row in conflicting_point_master_street_matches.iterrows()
+                ],
                 "addressVariants": [clean_properties(row) for _, row in variant_matches.head(20).iterrows()],
                 "structureLookups": [clean_properties(row) for _, row in lookup_matches.head(20).iterrows()],
                 "structure": clean_properties(structure_matches.iloc[0]) if not structure_matches.empty else None,

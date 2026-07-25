@@ -3,6 +3,8 @@ import test from 'node:test'
 import { cases } from '../src/data/cases.js'
 import {
   authorReviewerSkillMemory,
+  buildReviewerRationale,
+  compactQaInvestigationPacketForModel,
   createFixtureDraft,
   createPublisherHandoff,
   createThinkingTagDecoder,
@@ -12,6 +14,7 @@ import {
   getQaRecordMapPreview,
   getReviewerFeedback,
   getSkillIndex,
+  finalizeAgentReply,
   loadSkill,
   normalizeLmStudioDelta,
   openProposalAuditInFileExplorer,
@@ -197,6 +200,118 @@ test('normalizes reasoning and output without depending on a model name', () => 
   )
 })
 
+test('supplies a reviewer-readable evidence chain when an AV agent reply is blank', () => {
+  const avCase = {
+    ...cases[0],
+    id: 'MADV_QA_AV_APID_MISMATCH-FAULT-AV-POINT-LINK-MISMATCH',
+    address: '1 Ridgewood Road',
+    municipality: 'Rockport',
+    issueType: 'Address Variant point-link mismatch',
+    issueCode: 'MADV_QA_AV_APID_MISMATCH',
+    publishEligible: false,
+    publishBlocker: 'Controlled Rockport fault scenarios are training overlays and can never be published.',
+    changes: [{
+      entityLabel: 'Address Variant',
+      entityId: '{7A29EAB9-D607-4AAE-935F-091247BB5DE8}',
+      fields: [{
+        field: 'ADDRESS_POINT_ID',
+        before: 'M_273925_934533',
+        after: 'M_273118_932155',
+      }],
+    }],
+    qaEvidence: {
+      observations: ['The Address Variant points to M_273925_934533.'],
+      mapRelation: {
+        path: [
+          { from: 'MAD_ADDRESS_VARIANTS.MASTER_ADDRESS_ID', to: 'MAD_MASTER_ADDRESS.MASTER_ADDRESS_ID' },
+          { from: 'MAD_MASTER_ADDRESS.ADDRESS_POINT_ID', to: 'MAD_ADDRESS_POINTM.ADDRESS_POINT_ID' },
+        ],
+      },
+      relationshipEvidence: {
+        flaggedVariant: { MASTER_ADD: 17933, ADDRESS_PO: 'M_273925_934533' },
+        masterAddressStreet: [{
+          MASTER_ADD: 17933,
+          ADDRESS_PO: 'M_273118_932155',
+          FULL_NUMBE: '1',
+          STREET_N_1: 'RIDGEWOOD ROAD',
+        }],
+        conflictingPointMasterStreet: [{
+          MASTER_ADD: 18975,
+          ADDRESS_PO: 'M_273925_934533',
+          FULL_NUMBE: '33',
+          STREET_N_1: 'STRAITSMOUTH WAY',
+        }],
+      },
+    },
+  }
+
+  const rationale = buildReviewerRationale(avCase)
+  const fallback = finalizeAgentReply({ caseItem: avCase, reply: '', draft: null })
+
+  assert.match(rationale, /Master Address `17933`/)
+  assert.match(rationale, /1 RIDGEWOOD ROAD/)
+  assert.match(rationale, /Master Address `18975` \(33 STRAITSMOUTH WAY\)/)
+  assert.match(rationale, /M_273925_934533/)
+  assert.match(rationale, /M_273118_932155/)
+  assert.match(rationale, /training overlays and can never be published/)
+  assert.match(fallback, /^### Verified review rationale/)
+
+  const withNarrative = finalizeAgentReply({
+    caseItem: avCase,
+    reply: 'The local model made this separate claim.',
+    draft: null,
+  })
+  assert.match(withNarrative, /^### Verified review rationale/)
+  assert.match(withNarrative, /### Local-model narrative \(unverified\)/)
+  assert.match(withNarrative, /The local model made this separate claim/)
+})
+
+test('compacts the full QA packet before it enters a local model context', () => {
+  const packet = {
+    case: { id: 'case-1', address: '1 Ridgewood Road' },
+    evidence: {
+      viewId: 'MADV_QA_AV_APID_MISMATCH',
+      currentQaRecord: {
+        ADDRESS_VA: '{variant}',
+        ADDRESS_PO: 'M_273925_934533',
+        MASTER_ADD: 17933,
+        CUSTOMER_OWNER_NAME: 'This field is not needed to decide the point link.',
+      },
+      observations: ['The variant and parent point link disagree.'],
+      relationshipEvidence: {
+        addressVariants: Array.from({ length: 20 }, (_, index) => ({
+          ADDRESS_VA: `{variant-${index}}`,
+          ADDRESS_PO: 'M_273118_932155',
+          MASTER_ADD: 17933,
+          COMMENTS: 'Unneeded free text that should not consume model context.',
+        })),
+        conflictingPointMasterStreet: [{
+          MASTER_ADD: 18975,
+          ADDRESS_PO: 'M_273925_934533',
+          FULL_NUMBE: '33',
+          STREET_N_1: 'STRAITSMOUTH WAY',
+        }],
+      },
+    },
+    schema: {
+      source: 'schema reference',
+      subject: 'master-address-relationships',
+      tables: [{ table: 'MAD.MAD_MASTER_ADDRESS', definition: 'x'.repeat(2_000) }],
+      relationships: ['master relationship'],
+    },
+  }
+
+  const compact = compactQaInvestigationPacketForModel(packet)
+  const serialized = JSON.stringify(compact)
+
+  assert.equal(compact.evidence.currentQaRecord.CUSTOMER_OWNER_NAME, undefined)
+  assert.equal(compact.evidence.relationshipEvidence.addressVariants.length, 6)
+  assert.equal(compact.evidence.relationshipEvidence.addressVariants[0].COMMENTS, undefined)
+  assert.equal(compact.evidence.relationshipEvidence.conflictingPointMasterStreet[0].STREET_N_1, 'STRAITSMOUTH WAY')
+  assert.equal(compact.schema.tables[0].definition.length, 700)
+  assert.ok(serialized.length < 4_000)
+})
+
 test('recognizes split thinking tags used by local model templates', () => {
   const decoder = createThinkingTagDecoder()
   const parts = [
@@ -267,6 +382,59 @@ test('streams generic model output and tags on-demand skill calls', async () => 
     assert.ok(activity.some((event) => event.type === 'skill' && event.phase === 'started'))
     assert.ok(activity.some((event) => event.type === 'skill' && event.phase === 'completed'))
     assert.ok(activity.every((event) => !event.model || event.model === 'different-local-model'))
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('withholds an AP structure-link draft until the model supplies vector intersection evidence', async () => {
+  const originalFetch = globalThis.fetch
+  let requestCount = 0
+  globalThis.fetch = async () => {
+    requestCount += 1
+    const message = requestCount === 1
+      ? {
+          role: 'assistant',
+          content: '',
+          tool_calls: [{
+            id: 'stage-without-spatial-proof',
+            type: 'function',
+            function: {
+              name: 'stage_fixture_draft',
+              arguments: JSON.stringify({ reason: 'The point should be linked to the structure.' }),
+            },
+          }],
+        }
+      : { role: 'assistant', content: 'No draft was staged.' }
+    return new Response(JSON.stringify({ choices: [{ message }] }), {
+      headers: { 'content-type': 'application/json' },
+    })
+  }
+
+  const addressStructureCase = {
+    ...cases[0],
+    id: 'MADV_QA_AP_NO_STRUCT_LUT-TEST-SPATIAL-GATE',
+    issueCode: 'MADV_QA_AP_NO_STRUCT_LUT',
+    operationKind: 'link_point_to_structure',
+    operations: [{ type: 'link_point_to_structure', target: 'AP-100294 → STR-44108' }],
+    qaEvidence: {
+      viewId: 'MADV_QA_AP_NO_STRUCT_LUT',
+      observations: ['The selected point requires an explicit vector intersection check.'],
+    },
+  }
+
+  try {
+    const result = await runCaseAgent({
+      caseItem: addressStructureCase,
+      prompt: 'Investigate the missing structure lookup.',
+      baseUrl: 'http://local-model.test/v1',
+      model: 'different-local-model',
+    })
+
+    assert.equal(result.draft, null)
+    assert.equal(result.toolEvents[0].name, 'stage_fixture_draft')
+    assert.equal(result.toolEvents[0].summary, 'Withheld draft')
+    assert.match(result.reply, /Verified review rationale/)
   } finally {
     globalThis.fetch = originalFetch
   }

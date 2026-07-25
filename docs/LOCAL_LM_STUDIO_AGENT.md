@@ -69,6 +69,8 @@ The model is limited to the selected case and receives these tools:
 - `get_qa_investigation_packet` — combined case, QA-row, town-resolution, and relationship context for an automatic category investigation
 - `get_feature`
 - `get_related`
+- `list_case_geometries` — list only the selected case's address point, structure, parcel, road, and bounded nearby points before a spatial check
+- `run_case_geospatial_operator` — run `intersects`, `within`, `contains`, distance, or distance-threshold checks on the feature keys returned by `list_case_geometries`
 - `capture_map_evidence` — render one active-case point, structure, or road segment over the MassGIS basemap or 2025 orthoimagery and attach the PNG to the next model turn
 - `stage_fixture_draft`
 - `validate_draft`
@@ -81,6 +83,8 @@ The model is limited to the selected case and receives these tools:
 The MassGIS GeoServer tools are read-only and query only public MassGIS WFS evidence. They run from the local bridge, save any returned GeoJSON only under the ignored `.runtime/geoserver-evidence/` directory, and never receive MAD credentials. The agent describes a GeoServer layer before interpreting it and treats the result as supporting evidence, never as the sole basis for an edit.
 
 `capture_map_evidence` accepts a feature key from the active case, not an arbitrary coordinate, path, or map-service URL. The bridge calculates a bounded viewport, zooms out only enough to fit the selected geometry, mosaics the configured MassGIS tiles, draws the current case vectors and labels, and saves a 768-by-768 PNG under `.runtime/map-evidence/`. Red is current geometry, green is proposed geometry, and gold identifies the selected feature. Only the path, background, feature, and viewport metadata enter the audit transcript; the base64 image is kept out of browser events and attached directly to the model's next turn.
+
+`run_case_geospatial_operator` is vector-based and limited to geometries already in the bounded case workspace. The model must first list the available feature keys, then explicitly choose a subject and one or more comparison features. The result records the selected source layers, geometry types, predicate result, and measured distance where relevant. For the AP missing-structure-lookup workflow, a successful `address-point` → `structure` `intersects` result is required before the bridge will stage a point-to-structure draft.
 
 Image delivery uses the OpenAI-compatible multimodal content shape with `text` and `image_url` parts. There is no Qwen-, Gemma-, or model-ID branch. The selected LM Studio model must nevertheless be a vision-language model that supports both image input and the tool-calling behavior used by the workbench. Exact coordinates and MAD identifiers continue to come from vector and relationship tools, never from model estimates based on pixels.
 
