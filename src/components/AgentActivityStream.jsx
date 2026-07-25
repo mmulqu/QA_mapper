@@ -9,7 +9,7 @@ import {
   Square,
   Wrench,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -66,6 +66,7 @@ export default function AgentActivityStream({
   onBack,
 }) {
   const scrollRegionRef = useRef(null)
+  const [isFollowingLive, setIsFollowingLive] = useState(true)
   const latestEvent = events[events.length - 1]
   const statusText = useMemo(() => {
     if (error) return 'Investigation stopped'
@@ -76,8 +77,23 @@ export default function AgentActivityStream({
 
   useEffect(() => {
     const region = scrollRegionRef.current
+    if (region && isFollowingLive) region.scrollTop = region.scrollHeight
+  }, [events, isFollowingLive])
+
+  const handleStreamScroll = (event) => {
+    const region = event.currentTarget
+    const distanceFromLatest = region.scrollHeight - region.scrollTop - region.clientHeight
+    setIsFollowingLive((current) => {
+      const next = distanceFromLatest <= 24
+      return current === next ? current : next
+    })
+  }
+
+  const jumpToLatestActivity = () => {
+    const region = scrollRegionRef.current
     if (region) region.scrollTop = region.scrollHeight
-  }, [events])
+    setIsFollowingLive(true)
+  }
 
   return (
     <section className="map-workspace qa-queue-workspace" aria-label="QA investigation workspace">
@@ -104,7 +120,12 @@ export default function AgentActivityStream({
 
         <div className="activity-sr-status" role="status" aria-live="polite">{statusText}</div>
 
-        <div className="qa-activity-stream" ref={scrollRegionRef} aria-label="Live agent activity">
+        <div
+          className="qa-activity-stream"
+          ref={scrollRegionRef}
+          aria-label="Live agent activity"
+          onScroll={handleStreamScroll}
+        >
           {events.length ? events.map((event) => <StreamEvent key={event.id} event={event} />) : (
             <div className="activity-empty">
               <span className="activity-live-mark" aria-hidden="true" />
@@ -122,6 +143,17 @@ export default function AgentActivityStream({
             </article>
           ) : null}
         </div>
+
+        {!isFollowingLive ? (
+          <button
+            type="button"
+            className="qa-activity-jump-live"
+            onClick={jumpToLatestActivity}
+            aria-label="Jump to latest agent activity"
+          >
+            Jump to latest activity
+          </button>
+        ) : null}
 
         <footer className="qa-activity-footer">
           <div>
