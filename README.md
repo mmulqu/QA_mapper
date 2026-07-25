@@ -14,12 +14,18 @@ The current app focuses on the geometry-and-record inspection loop without conne
 - follow preset relations between address points, Master Address, MAD structure, structure lookup, address variants, and parcel;
 - ask a local LM Studio agent to explain the selected evidence or stage its controlled review draft;
 - watch the automatic investigation live in the center workspace, including model output and tagged on-demand skill/tool activity;
+- have the local agent turn rejected-proposal feedback into a structured lesson in the exact QA category's append-only reviewer memory, with the target and active authoring state visible in the UI;
 - inspect staged field changes as red/current and green/proposed values;
 - accept an eligible address-point proposal locally in the training workspace.
+- open the append-only proposal audit CSV directly from the persistent left panel.
 
 ## Run it
 
 The easiest local start is to double-click **Start MAD QA Workbench.cmd** in this folder. It starts LM Studio when needed, loads the configured local model, starts the agent bridge and app, then opens the workbench in your browser.
+
+Proposal events are recorded in `.runtime\proposal-history.csv`. The left-panel **Proposal audit CSV** control shows this path and, on Windows, opens the file selected in File Explorer through a fixed localhost-only action.
+
+The local agent authors lessons from human corrections under `agent-skills\mad-qa-<category>\references\reviewer-memory.md`; they are loaded only with the matching skill. See [docs/SKILL_MEMORY.md](docs/SKILL_MEMORY.md) for the forced memory-tool turn, routing, provenance, validation, deduplication, safety, and audit behavior.
 
 For development, use two PowerShell windows:
 

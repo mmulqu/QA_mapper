@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAD QA BSA"
+  short_description: "Street-arc QA rules and reviewer memory"
+  default_prompt: "Use $mad-qa-bsa to investigate this MADV_QA_BSA issue."

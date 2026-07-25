@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAD QA SN"
+  short_description: "Site-name QA rules and reviewer memory"
+  default_prompt: "Use $mad-qa-sn to investigate this MADV_QA_SN issue."

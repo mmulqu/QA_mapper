@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAD QA ESZ"
+  short_description: "Emergency-zone QA rules and reviewer memory"
+  default_prompt: "Use $mad-qa-esz to investigate this MADV_QA_ESZ issue."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAD QA BRV"
+  short_description: "Base-range QA rules and reviewer memory"
+  default_prompt: "Use $mad-qa-brv to investigate this MADV_QA_BRV issue."

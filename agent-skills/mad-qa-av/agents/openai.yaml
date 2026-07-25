@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAD QA AV"
+  short_description: "Address-variant QA rules and reviewer memory"
+  default_prompt: "Use $mad-qa-av to investigate this MADV_QA_AV issue."

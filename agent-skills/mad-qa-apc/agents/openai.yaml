@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAD QA APC"
+  short_description: "Address-centroid QA rules and reviewer memory"
+  default_prompt: "Use $mad-qa-apc to investigate this MADV_QA_APC issue."

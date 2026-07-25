@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAD QA ASL"
+  short_description: "Point-structure QA rules and reviewer memory"
+  default_prompt: "Use $mad-qa-asl to investigate this MADV_QA_ASL issue."
