@@ -145,6 +145,47 @@ const rockportQaCase = {
   townExtractSummary: { town: 'Rockport', townId: 252, communityId: 270 },
 }
 
+const qaRecordPage = {
+  kind: 'mad-qa-issue-record-page',
+  view: {
+    id: 'MADV_QA_ASL_DUPES',
+    description: 'Structure lookup records that are functionally duplicative',
+    categoryId: 'ADDPT_STRUCT_LUT',
+    category: 'Point–structure lookups',
+  },
+  statewideCount: 181,
+  loadedCount: 2,
+  hasMore: true,
+  selectionLimit: 10,
+  containsMockRows: true,
+  rows: [
+    {
+      id: rockportQaCase.id,
+      caseId: rockportQaCase.id,
+      viewId: 'MADV_QA_ASL_DUPES',
+      address: '8 Alpaca Court',
+      municipality: 'Rockport',
+      affectedRecordId: 'M_272655_933812',
+      issueDetail: 'Two lookup rows repeat the same relationship.',
+      severity: 'Review',
+      sourceLabel: 'Rockport MAD extract',
+      mock: false,
+    },
+    {
+      id: 'MADV_QA_ASL_DUPES-MOCK-0002',
+      caseId: null,
+      viewId: 'MADV_QA_ASL_DUPES',
+      address: '27 Sample Road',
+      municipality: 'Worcester',
+      affectedRecordId: 'MOCK-ASL-000027',
+      issueDetail: 'Demonstration row awaiting the production SQL view connector.',
+      severity: 'Medium',
+      sourceLabel: 'Mock QA view row',
+      mock: true,
+    },
+  ],
+}
+
 async function selectTrainingCase(user, name = '147 Brookline Street') {
   await user.click(screen.getByText('Training examples'))
   await user.click(screen.getByRole('button', { name: new RegExp(name) }))
@@ -229,6 +270,9 @@ describe('MAD QA feature explorer', () => {
       if (url === '/test-data/brookline-mad-snapshot.json') {
         return Promise.resolve({ ok: false, json: async () => ({}) })
       }
+      if (url === '/api/qa/issues/MADV_QA_ASL_DUPES/records') {
+        return Promise.resolve({ ok: true, json: async () => qaRecordPage })
+      }
       if (url === '/api/qa/issues/MADV_QA_ASL_DUPES/investigate-stream') {
         return new Promise((resolve) => { finishInvestigation = resolve })
       }
@@ -294,8 +338,12 @@ describe('MAD QA feature explorer', () => {
     render(<App />)
 
     await user.click(await screen.findByRole('button', { name: /Structure lookup records that are functionally duplicative/ }))
+    expect(await screen.findByText('Showing 2 of 181 issues')).toBeInTheDocument()
+    expect(screen.queryByText('Local agent investigation')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('checkbox', { name: /Select 8 Alpaca Court, Rockport/ }))
+    await user.click(screen.getByRole('button', { name: 'Run 1 selected' }))
     expect(screen.getByText('Local agent investigation')).toBeInTheDocument()
-    expect(screen.getByText('Opening the investigation stream')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Stop agent' })).toBeInTheDocument()
 
     finishInvestigation({
       ok: true,
@@ -315,6 +363,10 @@ describe('MAD QA feature explorer', () => {
     })
 
     expect(await screen.findByText('Town extract workspace for Rockport')).toBeInTheDocument()
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      '/api/qa/issues/MADV_QA_ASL_DUPES/investigate-stream',
+      expect.objectContaining({ body: JSON.stringify({ recordId: rockportQaCase.id }) }),
+    )
     expect(await screen.findByText('8 Alpaca Court')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Show agent diff' }))
     expect(screen.getByText('Reviewable, not publishable')).toBeInTheDocument()
@@ -356,6 +408,9 @@ describe('MAD QA feature explorer', () => {
     vi.stubGlobal('fetch', vi.fn((url) => {
       if (url === '/api/qa/issues') return Promise.resolve({ ok: true, json: async () => qaCatalog })
       if (url === '/test-data/brookline-mad-snapshot.json') return Promise.resolve({ ok: false, json: async () => ({}) })
+      if (url === '/api/qa/issues/MADV_QA_ASL_DUPES/records') {
+        return Promise.resolve({ ok: true, json: async () => qaRecordPage })
+      }
       if (url === '/api/qa/issues/MADV_QA_ASL_DUPES/investigate-stream') return Promise.resolve(streamResponse)
       return Promise.resolve({ ok: false, json: async () => ({}) })
     }))
@@ -366,6 +421,8 @@ describe('MAD QA feature explorer', () => {
     render(<App />)
 
     await user.click(await screen.findByRole('button', { name: /Structure lookup records that are functionally duplicative/ }))
+    await user.click(await screen.findByRole('checkbox', { name: /Select 8 Alpaca Court, Rockport/ }))
+    await user.click(screen.getByRole('button', { name: 'Run 1 selected' }))
     sendEvent('activity', {
       id: 'model-1', type: 'model', phase: 'started', turn: 1, model: 'another-local-model',
       title: 'Model turn 1', detail: 'Reading the case.',
@@ -403,6 +460,89 @@ describe('MAD QA feature explorer', () => {
     })
     streamController.close()
     expect(await screen.findByText('Production view connection required')).toBeInTheDocument()
+  })
+
+  it('runs only the selected QA rows and returns a review list for a multi-row batch', async () => {
+    const investigationCalls = []
+    vi.stubGlobal('fetch', vi.fn((url, options = {}) => {
+      if (url === '/api/qa/issues') return Promise.resolve({ ok: true, json: async () => qaCatalog })
+      if (url === '/test-data/brookline-mad-snapshot.json') return Promise.resolve({ ok: false, json: async () => ({}) })
+      if (url === '/api/qa/issues/MADV_QA_ASL_DUPES/records') {
+        return Promise.resolve({ ok: true, json: async () => qaRecordPage })
+      }
+      if (url === '/api/qa/issues/MADV_QA_ASL_DUPES/investigate-stream') {
+        const { recordId } = JSON.parse(options.body)
+        investigationCalls.push(recordId)
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            issue: qaCatalog.groups[0].issues[0],
+            selectedRecord: qaRecordPage.rows.find((row) => row.id === recordId),
+            caseItem: {
+              ...rockportQaCase,
+              id: `${recordId}-case`,
+              status: 'evidence',
+              townExtractSummary: null,
+            },
+            townExtractUrl: null,
+            model: 'local-batch-model',
+            reply: `Reviewed ${recordId}.`,
+            toolEvents: [],
+            draft: null,
+            proposals: [],
+          }),
+        })
+      }
+      return Promise.resolve({ ok: false, json: async () => ({}) })
+    }))
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: /Structure lookup records that are functionally duplicative/ }))
+    await user.click(await screen.findByRole('button', { name: 'Select first 2' }))
+    await user.click(screen.getByRole('button', { name: 'Run 2 selected' }))
+
+    expect(await screen.findByText('Selected issue run complete')).toBeInTheDocument()
+    expect(screen.getByText('2 reviewed')).toBeInTheDocument()
+    expect(investigationCalls).toEqual([
+      rockportQaCase.id,
+      'MADV_QA_ASL_DUPES-MOCK-0002',
+    ])
+  })
+
+  it('stops the active model request and leaves remaining selected rows unrun', async () => {
+    const startedRows = []
+    let investigationSignal
+    vi.stubGlobal('fetch', vi.fn((url, options = {}) => {
+      if (url === '/api/qa/issues') return Promise.resolve({ ok: true, json: async () => qaCatalog })
+      if (url === '/test-data/brookline-mad-snapshot.json') return Promise.resolve({ ok: false, json: async () => ({}) })
+      if (url === '/api/qa/issues/MADV_QA_ASL_DUPES/records') {
+        return Promise.resolve({ ok: true, json: async () => qaRecordPage })
+      }
+      if (url === '/api/qa/issues/MADV_QA_ASL_DUPES/investigate-stream') {
+        const { recordId } = JSON.parse(options.body)
+        startedRows.push(recordId)
+        investigationSignal = options.signal
+        return new Promise((resolve, reject) => {
+          options.signal.addEventListener('abort', () => reject(new DOMException('Stopped', 'AbortError')), { once: true })
+        })
+      }
+      return Promise.resolve({ ok: false, json: async () => ({}) })
+    }))
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: /Structure lookup records that are functionally duplicative/ }))
+    await user.click(await screen.findByRole('button', { name: 'Select first 2' }))
+    await user.click(screen.getByRole('button', { name: 'Run 2 selected' }))
+    await user.click(await screen.findByRole('button', { name: 'Stop agent' }))
+
+    expect(investigationSignal.aborted).toBe(true)
+    expect(startedRows).toEqual([rockportQaCase.id])
+    expect((await screen.findAllByText('Stopped by reviewer')).length).toBeGreaterThan(0)
+    expect(screen.getByText(/No remaining selected rows will start/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Back to issues' }))
+    expect(screen.getByRole('button', { name: 'Run 2 selected' })).toBeInTheDocument()
   })
 
   it('opens an attribute table and follows preset relationships', async () => {

@@ -19,6 +19,7 @@ import {
   LoaderCircle,
   MapPin,
   PanelLeftClose,
+  Play,
   Search,
   X,
 } from 'lucide-react'
@@ -37,6 +38,7 @@ import {
   acceptCaseDraft,
   getProposalLineage,
   getQaIssueCatalog,
+  getQaIssueRecords,
   getTownExtract,
   getTownRecordBundle,
   investigateQaIssue,
@@ -211,7 +213,6 @@ function CaseDocket({
                           className={active ? 'qa-issue active' : 'qa-issue'}
                           onClick={() => onSelectQaIssue(issue)}
                           aria-current={active ? 'true' : undefined}
-                          disabled={working}
                         >
                           <span className="qa-issue-count">{issue.count.toLocaleString()}</span>
                           <span className="qa-issue-copy">
@@ -419,6 +420,186 @@ function MapHitInspector({
   )
 }
 
+function QaIssueSelector({
+  issue,
+  recordPage,
+  status,
+  error,
+  selectedIds,
+  onToggle,
+  onSelectPreview,
+  onClear,
+  onRun,
+  onRetry,
+}) {
+  const loading = status === 'loading-records'
+  const selectionLimit = recordPage?.selectionLimit ?? 10
+  const selectedCount = selectedIds.length
+
+  return (
+    <section className="map-workspace qa-queue-workspace" aria-label="QA issue record selection">
+      <div className={recordPage?.containsMockRows ? 'qa-record-sheet has-mock-notice' : 'qa-record-sheet'}>
+        <header className="qa-record-header">
+          <div>
+            <span>QA view rows</span>
+            <h2>{issue?.description || 'Choose issue records'}</h2>
+            <p>{issue?.id}</p>
+          </div>
+          {recordPage ? (
+            <div className="qa-record-tally" aria-label={`${selectedCount} of ${selectionLimit} rows selected`}>
+              <strong>{selectedCount}</strong>
+              <span>of {selectionLimit} selected</span>
+            </div>
+          ) : null}
+        </header>
+
+        {loading ? (
+          <div className="qa-record-state" role="status">
+            <LoaderCircle className="agent-spinner" size={24} />
+            <div>
+              <strong>Reading the QA view preview</strong>
+              <span>Loading record-level issues without starting the agent.</span>
+            </div>
+          </div>
+        ) : error ? (
+          <div className="qa-record-state is-error" role="alert">
+            <AlertTriangle size={22} />
+            <div>
+              <strong>QA rows could not be loaded</strong>
+              <span>{error}</span>
+            </div>
+            <button type="button" onClick={onRetry}>Try again</button>
+          </div>
+        ) : recordPage ? (
+          <>
+            <div className="qa-record-toolbar">
+              <div>
+                <strong>
+                  Showing {recordPage.loadedCount.toLocaleString()} of {recordPage.statewideCount.toLocaleString()} issues
+                </strong>
+                <span>
+                  {recordPage.hasMore
+                    ? 'This preview is deliberately bounded. Production will page and filter the SQL view.'
+                    : 'All reported issues are loaded.'}
+                </span>
+              </div>
+              <div className="qa-record-actions">
+                <button type="button" onClick={onSelectPreview}>
+                  Select first {Math.min(recordPage.loadedCount, selectionLimit)}
+                </button>
+                <button type="button" onClick={onClear} disabled={!selectedCount}>Clear</button>
+              </div>
+            </div>
+
+            {recordPage.containsMockRows ? (
+              <p className="qa-mock-notice">
+                <AlertTriangle size={16} aria-hidden="true" />
+                Mock rows are visibly labeled and can exercise the agent workflow, but cannot be accepted or published.
+              </p>
+            ) : null}
+
+            <div className="qa-record-table-wrap">
+              <table className="qa-record-table">
+                <thead>
+                  <tr>
+                    <th scope="col"><span className="sr-only">Select</span></th>
+                    <th scope="col">Issue address</th>
+                    <th scope="col">Municipality</th>
+                    <th scope="col">Affected record</th>
+                    <th scope="col">Source</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recordPage.rows.map((row) => {
+                    const checked = selectedIds.includes(row.id)
+                    const disabled = !checked && selectedCount >= selectionLimit
+                    return (
+                      <tr key={row.id} className={checked ? 'is-selected' : undefined}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={disabled}
+                            onChange={() => onToggle(row.id)}
+                            aria-label={`Select ${row.address}, ${row.municipality}`}
+                          />
+                        </td>
+                        <td>
+                          <div className="qa-record-primary">
+                            <strong>{row.address}</strong>
+                            <span>{row.issueDetail}</span>
+                          </div>
+                        </td>
+                        <td>{row.municipality}</td>
+                        <td><code>{row.affectedRecordId}</code></td>
+                        <td>
+                          <span className={row.mock ? 'qa-row-source is-mock' : 'qa-row-source'}>
+                            {row.mock ? 'Mock' : 'Fixture'}
+                          </span>
+                          <small>{row.sourceLabel}</small>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <footer className="qa-record-footer">
+              <span>
+                The agent will process selected rows one at a time. Stop cancels the current row and leaves the rest unrun.
+              </span>
+              <button type="button" className="qa-run-button" onClick={onRun} disabled={!selectedCount}>
+                <Play size={17} fill="currentColor" aria-hidden="true" />
+                Run {selectedCount || ''} selected
+              </button>
+            </footer>
+          </>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+function QaBatchSummary({ issue, batch, onOpenResult, onBack }) {
+  const completed = batch.results.filter((item) => item.status === 'complete').length
+  const failed = batch.results.filter((item) => item.status === 'error').length
+
+  return (
+    <section className="map-workspace qa-queue-workspace" aria-label="QA batch results">
+      <div className="qa-batch-sheet">
+        <header>
+          <div>
+            <span>Selected issue run complete</span>
+            <h2>{issue.description}</h2>
+            <p>{completed} reviewed{failed ? ` · ${failed} could not complete` : ''}</p>
+          </div>
+          <button type="button" onClick={onBack}><ArrowLeft size={17} /> Back to issues</button>
+        </header>
+        <div className="qa-batch-results">
+          {batch.results.map((item, index) => (
+            <article key={item.record.id} className={item.status === 'error' ? 'is-error' : undefined}>
+              <span>{String(index + 1).padStart(2, '0')}</span>
+              <div>
+                <strong>{item.record.address}</strong>
+                <small>{item.record.municipality} · {item.record.affectedRecordId}</small>
+                <p>
+                  {item.status === 'error'
+                    ? item.error
+                    : item.result.caseItem?.recommendation || 'Investigation complete.'}
+                </p>
+              </div>
+              {item.status === 'complete' ? (
+                <button type="button" onClick={() => onOpenResult(item)}>Open review</button>
+              ) : <strong>Needs retry</strong>}
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function QaQueueWorkspace({ issue, status, error, caseItem }) {
   const working = status === 'working' || status === 'loading-town'
   const evidenceOnly = caseItem?.status === 'evidence'
@@ -456,14 +637,14 @@ function QaQueueWorkspace({ issue, status, error, caseItem }) {
             <span>Production view connection required</span>
             <h2>{issue.description}</h2>
             <p>{caseItem.rationale}</p>
-            <small>{issue.count.toLocaleString()} statewide records are reported, but no record-level rows were available in the Rockport fixture.</small>
+            <small>{issue.count.toLocaleString()} statewide records are reported. This selected row remains review-only until authoritative IDs and relationship closure are available.</small>
           </>
         ) : (
           <>
             <span>Current QA report</span>
             <h2>Select a non-zero QA check</h2>
-            <p>The selected category becomes a bounded investigation. When issue rows resolve to a town, its MAD extract opens here with the agent’s proposed change.</p>
-            <small>Rockport test coverage is marked in the queue.</small>
+            <p>Open a check to see its record-level issues, select a bounded batch, and run the agent only on those rows.</p>
+            <small>Rockport fixture coverage is marked in the queue. Mock preview rows are labeled and cannot be published.</small>
           </>
         )}
       </div>
@@ -487,6 +668,9 @@ export default function App() {
   const [qaCatalogStatus, setQaCatalogStatus] = useState('loading')
   const [qaCatalogError, setQaCatalogError] = useState('')
   const [activeQaIssue, setActiveQaIssue] = useState(null)
+  const [qaIssueRecords, setQaIssueRecords] = useState({ status: 'idle', error: '', page: null })
+  const [selectedQaRecordIds, setSelectedQaRecordIds] = useState([])
+  const [qaBatch, setQaBatch] = useState({ status: 'idle', currentIndex: 0, total: 0, results: [] })
   const [qaCase, setQaCase] = useState(null)
   const [qaInvestigation, setQaInvestigation] = useState({ status: 'idle', error: '', result: null })
   const [qaActivity, setQaActivity] = useState([])
@@ -564,6 +748,11 @@ export default function App() {
   const activeFeedback = caseItem ? reviewerFeedback[caseItem.id] : null
   const activeProposalLineage = caseItem ? proposalLineages[caseItem.id] ?? [] : []
   const activeProposal = activeAgentDraft ?? [...activeProposalLineage].reverse().find((proposal) => proposal.status === 'staged')
+  const currentQaRecord = useMemo(() => {
+    if (!qaIssueRecords.page || !qaBatch.currentIndex) return null
+    const selectedRows = qaIssueRecords.page.rows.filter((row) => selectedQaRecordIds.includes(row.id))
+    return selectedRows[qaBatch.currentIndex - 1] ?? null
+  }, [qaBatch.currentIndex, qaIssueRecords.page, selectedQaRecordIds])
 
   const loadProposalLineage = async (caseId) => {
     try {
@@ -660,12 +849,7 @@ export default function App() {
     setHighlightedFeatureKey(previous.highlightedFeatureKey)
   }
 
-  const selectQaIssue = async (issue) => {
-    qaRequestRef.current?.abort()
-    const requestController = new AbortController()
-    qaRequestRef.current = requestController
-    setActiveDataView('qa')
-    setActiveQaIssue(issue)
+  const resetQaReviewWorkspace = () => {
     setQaCase(null)
     setTownExtract(null)
     setTownRecords({})
@@ -674,60 +858,216 @@ export default function App() {
     setShowChangeDiff(false)
     setShowAgent(false)
     setShowRejectDialog(false)
+  }
+
+  const selectQaIssue = async (issue) => {
+    qaRequestRef.current?.abort()
+    const requestController = new AbortController()
+    qaRequestRef.current = requestController
+    setActiveDataView('qa')
+    setActiveQaIssue(issue)
+    resetQaReviewWorkspace()
     setDocketCollapsed(false)
     setQaActivity([])
     setQaModel('')
-    setQaInvestigation({ status: 'working', error: '', result: null })
+    setSelectedQaRecordIds([])
+    setQaBatch({ status: 'idle', currentIndex: 0, total: 0, results: [] })
+    setQaIssueRecords({ status: 'loading', error: '', page: null })
+    setQaInvestigation({ status: 'loading-records', error: '', result: null })
 
     try {
-      const result = await investigateQaIssue(issue.id, {
-        signal: requestController.signal,
-        onActivity: (event) => {
-          if (event.model) setQaModel(event.model)
-          setQaActivity((current) => mergeAgentActivity(current, event))
-        },
-      })
-      setQaCase(result.caseItem)
-      setQaModel(result.model || '')
-      setQaInvestigation({
-        status: result.townExtractUrl ? 'loading-town' : 'ready',
-        error: '',
-        result,
-      })
-      if (result.draft?.changes?.length) {
-        setAgentDrafts((current) => ({ ...current, [result.caseItem.id]: result.draft }))
-        setReviewDecisions((current) => ({ ...current, [result.caseItem.id]: { status: 'ready' } }))
-      }
-      if (result.proposals) {
-        setProposalLineages((current) => ({ ...current, [result.caseItem.id]: result.proposals }))
-      }
-
-      if (result.townExtractUrl) {
-        setQaActivity((current) => mergeAgentActivity(current, {
-          id: 'town-extract-load',
-          type: 'status',
-          phase: 'started',
-          title: `Load ${result.caseItem.municipality} town extract`,
-          detail: 'Preparing vector layers and preset related records.',
-        }))
-        const extract = await getTownExtract(result.townExtractUrl)
-        setTownExtract(extract)
-        setVisibleLayers(['addresses', 'structures', 'roads', 'communities'])
-        setQaActivity((current) => mergeAgentActivity(current, {
-          id: 'town-extract-load',
-          type: 'status',
-          phase: 'completed',
-          title: `${result.caseItem.municipality} town extract ready`,
-          detail: 'Opening the map review workspace.',
-        }))
-        setShowAgent(true)
-      } else {
-        setShowAgent(true)
-      }
-      setQaInvestigation({ status: 'ready', error: '', result })
+      const page = await getQaIssueRecords(issue.id, { signal: requestController.signal })
+      setQaIssueRecords({ status: 'ready', error: '', page })
+      setQaInvestigation({ status: 'selecting', error: '', result: null })
     } catch (error) {
       if (error.name === 'AbortError') return
+      setQaIssueRecords({ status: 'error', error: error.message, page: null })
+      setQaInvestigation({ status: 'selecting', error: error.message, result: null })
+    } finally {
+      if (qaRequestRef.current === requestController) qaRequestRef.current = null
+    }
+  }
+
+  const toggleQaRecord = (recordId) => {
+    const selectionLimit = qaIssueRecords.page?.selectionLimit ?? 10
+    setSelectedQaRecordIds((current) => {
+      if (current.includes(recordId)) return current.filter((id) => id !== recordId)
+      if (current.length >= selectionLimit) return current
+      return [...current, recordId]
+    })
+  }
+
+  const selectQaPreview = () => {
+    const page = qaIssueRecords.page
+    if (!page) return
+    setSelectedQaRecordIds(page.rows.slice(0, page.selectionLimit).map((row) => row.id))
+  }
+
+  const loadQaResultForReview = async (result, signal) => {
+    setQaCase(result.caseItem)
+    setQaModel(result.model || '')
+    setQaInvestigation({
+      status: result.townExtractUrl ? 'loading-town' : 'ready',
+      error: '',
+      result,
+    })
+    if (result.draft?.changes?.length) {
+      setAgentDrafts((current) => ({ ...current, [result.caseItem.id]: result.draft }))
+      setReviewDecisions((current) => ({ ...current, [result.caseItem.id]: { status: 'ready' } }))
+    }
+    if (result.proposals) {
+      setProposalLineages((current) => ({ ...current, [result.caseItem.id]: result.proposals }))
+    }
+
+    if (result.townExtractUrl) {
+      setQaActivity((current) => mergeAgentActivity(current, {
+        id: `${result.caseItem.id}:town-extract-load`,
+        type: 'status',
+        phase: 'started',
+        title: `Load ${result.caseItem.municipality} town extract`,
+        detail: 'Preparing vector layers and preset related records.',
+      }))
+      const extract = await getTownExtract(result.townExtractUrl, { signal })
+      setTownExtract(extract)
+      setVisibleLayers(['addresses', 'structures', 'roads', 'communities'])
+      setQaActivity((current) => mergeAgentActivity(current, {
+        id: `${result.caseItem.id}:town-extract-load`,
+        type: 'status',
+        phase: 'completed',
+        title: `${result.caseItem.municipality} town extract ready`,
+        detail: 'Opening the map review workspace.',
+      }))
+    }
+    setShowAgent(true)
+    setQaInvestigation({ status: 'ready', error: '', result })
+  }
+
+  const runSelectedQaRecords = async () => {
+    const page = qaIssueRecords.page
+    if (!page || !activeQaIssue) return
+    const selectedRows = page.rows.filter((row) => selectedQaRecordIds.includes(row.id))
+    if (!selectedRows.length) return
+
+    qaRequestRef.current?.abort()
+    const requestController = new AbortController()
+    qaRequestRef.current = requestController
+    resetQaReviewWorkspace()
+    setQaActivity([])
+    setQaModel('')
+    setQaBatch({ status: 'working', currentIndex: 0, total: selectedRows.length, results: [] })
+    setQaInvestigation({ status: 'working', error: '', result: null })
+    const completedResults = []
+
+    try {
+      for (let index = 0; index < selectedRows.length; index += 1) {
+        const row = selectedRows[index]
+        setQaBatch((current) => ({ ...current, currentIndex: index + 1 }))
+        setQaActivity((current) => mergeAgentActivity(current, {
+          id: `${row.id}:queue`,
+          type: 'status',
+          phase: 'started',
+          title: `Issue ${index + 1} of ${selectedRows.length}`,
+          detail: `${row.address} · ${row.municipality}`,
+        }))
+
+        try {
+          const result = await investigateQaIssue(activeQaIssue.id, {
+            recordId: row.id,
+            signal: requestController.signal,
+            onActivity: (event) => {
+              if (event.model) setQaModel(event.model)
+              setQaActivity((current) => mergeAgentActivity(current, {
+                ...event,
+                id: `${row.id}:${event.id}`,
+              }))
+            },
+          })
+          completedResults.push({ record: row, status: 'complete', result })
+          setQaActivity((current) => mergeAgentActivity(current, {
+            id: `${row.id}:queue`,
+            type: 'status',
+            phase: 'completed',
+            title: `Issue ${index + 1} of ${selectedRows.length} complete`,
+            detail: row.address,
+          }))
+        } catch (error) {
+          if (error.name === 'AbortError') throw error
+          completedResults.push({ record: row, status: 'error', error: error.message })
+          setQaActivity((current) => mergeAgentActivity(current, {
+            id: `${row.id}:queue`,
+            type: 'status',
+            phase: 'error',
+            title: `Issue ${index + 1} could not complete`,
+            detail: error.message,
+          }))
+        }
+        setQaBatch({
+          status: 'working',
+          currentIndex: index + 1,
+          total: selectedRows.length,
+          results: [...completedResults],
+        })
+      }
+
+      const successful = completedResults.filter((item) => item.status === 'complete')
+      if (selectedRows.length === 1 && successful.length === 1) {
+        await loadQaResultForReview(successful[0].result, requestController.signal)
+      } else {
+        setQaBatch({
+          status: 'complete',
+          currentIndex: selectedRows.length,
+          total: selectedRows.length,
+          results: [...completedResults],
+        })
+        setQaInvestigation({ status: 'batch-complete', error: '', result: null })
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        if (qaRequestRef.current === requestController) {
+          setQaBatch((current) => ({ ...current, status: 'stopped', results: [...completedResults] }))
+          setQaInvestigation({ status: 'stopped', error: '', result: null })
+        }
+        return
+      }
       setQaInvestigation({ status: 'error', error: error.message, result: null })
+    } finally {
+      if (qaRequestRef.current === requestController) qaRequestRef.current = null
+    }
+  }
+
+  const stopQaInvestigation = () => {
+    if (!qaRequestRef.current) return
+    qaRequestRef.current.abort()
+    setQaBatch((current) => ({ ...current, status: 'stopped' }))
+    setQaInvestigation({ status: 'stopped', error: '', result: null })
+    setQaActivity((current) => mergeAgentActivity(current, {
+      id: 'reviewer-stop',
+      type: 'status',
+      phase: 'completed',
+      title: 'Stopped by reviewer',
+      detail: 'The active model request was cancelled. No remaining selected rows will start.',
+    }))
+  }
+
+  const returnToQaRows = () => {
+    qaRequestRef.current?.abort()
+    qaRequestRef.current = null
+    resetQaReviewWorkspace()
+    setQaBatch({ status: 'idle', currentIndex: 0, total: 0, results: [] })
+    setQaInvestigation({ status: 'selecting', error: '', result: null })
+  }
+
+  const openQaBatchResult = async (batchItem) => {
+    qaRequestRef.current?.abort()
+    const requestController = new AbortController()
+    qaRequestRef.current = requestController
+    resetQaReviewWorkspace()
+    try {
+      await loadQaResultForReview(batchItem.result, requestController.signal)
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        setQaInvestigation({ status: 'error', error: error.message, result: batchItem.result })
+      }
     } finally {
       if (qaRequestRef.current === requestController) qaRequestRef.current = null
     }
@@ -820,13 +1160,44 @@ export default function App() {
           </button>
         )}
         {activeDataView === 'qa' && (!caseItem || !townExtract) ? (
-          activeQaIssue && ['working', 'loading-town', 'error'].includes(qaInvestigation.status) ? (
+          activeQaIssue && ['working', 'loading-town', 'error', 'stopped'].includes(qaInvestigation.status) ? (
             <AgentActivityStream
               issue={activeQaIssue}
               status={qaInvestigation.status}
               error={qaInvestigation.error}
               events={qaActivity}
               model={qaModel}
+              currentRecord={currentQaRecord}
+              batchPosition={qaBatch.total ? { current: qaBatch.currentIndex, total: qaBatch.total } : null}
+              onStop={['working', 'loading-town'].includes(qaInvestigation.status) ? stopQaInvestigation : null}
+              onBack={qaInvestigation.status === 'stopped' ? returnToQaRows : null}
+            />
+          ) : activeQaIssue && qaInvestigation.status === 'batch-complete' ? (
+            <QaBatchSummary
+              issue={activeQaIssue}
+              batch={qaBatch}
+              onOpenResult={openQaBatchResult}
+              onBack={returnToQaRows}
+            />
+          ) : activeQaIssue && qaInvestigation.result ? (
+            <QaQueueWorkspace
+              issue={activeQaIssue}
+              status={qaInvestigation.status}
+              error={qaInvestigation.error}
+              caseItem={caseItem}
+            />
+          ) : activeQaIssue ? (
+            <QaIssueSelector
+              issue={activeQaIssue}
+              recordPage={qaIssueRecords.page}
+              status={qaInvestigation.status}
+              error={qaIssueRecords.error}
+              selectedIds={selectedQaRecordIds}
+              onToggle={toggleQaRecord}
+              onSelectPreview={selectQaPreview}
+              onClear={() => setSelectedQaRecordIds([])}
+              onRun={runSelectedQaRecords}
+              onRetry={() => selectQaIssue(activeQaIssue)}
             />
           ) : (
             <QaQueueWorkspace

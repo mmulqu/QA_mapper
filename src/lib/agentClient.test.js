@@ -4,6 +4,8 @@ import {
   askLocalAgent,
   getProposalAuditInfo,
   getProposalLineage,
+  getQaIssueRecords,
+  investigateQaIssue,
   openProposalAuditInFileExplorer,
   readAgentEventStream,
   rejectCaseDraft,
@@ -100,5 +102,35 @@ describe('local agent client', () => {
       model: 'local-model',
     })
     expect(activity.map((event) => event.type)).toEqual(['reasoning_delta', 'skill'])
+  })
+
+  it('loads a bounded QA row preview before investigating one selected record', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ statewideCount: 1716, loadedCount: 12, rows: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ reply: 'Selected row reviewed.' }),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getQaIssueRecords('MADV_QA_ASL_DUPES')
+    await investigateQaIssue('MADV_QA_ASL_DUPES', { recordId: 'QA-ROW-17' })
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      '/api/qa/issues/MADV_QA_ASL_DUPES/records',
+      { signal: undefined },
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/qa/issues/MADV_QA_ASL_DUPES/investigate-stream',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ recordId: 'QA-ROW-17' }),
+      }),
+    )
   })
 })

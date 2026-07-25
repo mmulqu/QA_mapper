@@ -5,7 +5,8 @@ A map-first QA workbench for reviewing AI-agent proposals against local MAD extr
 The current app focuses on the geometry-and-record inspection loop without connecting to production:
 
 - browse the current daily QA checks by data category, with zero-count checks omitted;
-- select a QA category and let the local agent narrow it to issue records;
+- open a QA category, inspect a bounded preview of its record-level issues, and select up to 10 rows for the local agent;
+- run selected issues sequentially, with a visible Stop action that cancels the active LM Studio request and leaves the remaining queue unrun;
 - resolve the affected town through MAD community/town identifiers and load that town's extract;
 - view address-point, structure, parcel, road, and nearby-address vectors on a Leaflet map;
 - switch between the public MassGIS basemap and MassGIS 2025 natural-color imagery, and control vector visibility;

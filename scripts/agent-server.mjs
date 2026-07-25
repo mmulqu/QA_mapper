@@ -7,6 +7,7 @@ import { resolve } from 'node:path'
 import { cases } from '../src/data/cases.js'
 import { getFeatureRecords, relatedKeys } from '../src/lib/featureRecords.js'
 import { findQaIssue, loadQaCatalog } from './qa-workflow.mjs'
+import { buildMockQaCase, buildQaIssueRecordPage } from './qa-issue-records.mjs'
 import {
   appendReviewerSkillMemory,
   getSkillMemoryTarget,
@@ -89,6 +90,7 @@ const proposalAgentContexts = new Map()
 const dynamicCases = new Map()
 const townExtractCache = new Map()
 const townRecordCache = new Map()
+const qaIssueRecordCache = new Map()
 const MAX_PROPOSAL_CONTEXTS = 200
 
 function compactText(value, maxLength) {
@@ -529,31 +531,70 @@ function buildEvidenceOnlyQaCase(issue, adapterResult) {
   }
 }
 
-async function prepareQaInvestigation(viewId) {
+async function loadQaIssueContext(viewId) {
   const catalog = loadQaCatalog()
   const issue = findQaIssue(viewId, catalog)
   if (!issue) throw new Error('The selected QA view is not a non-zero issue in the current report.')
 
-  const adapterResult = await runMadFixtureAdapter('investigate', ['--view-id', issue.id])
-  const caseItem = adapterResult.cases?.[0]
+  if (!qaIssueRecordCache.has(issue.id)) {
+    qaIssueRecordCache.set(
+      issue.id,
+      runMadFixtureAdapter('investigate', ['--view-id', issue.id])
+        .then((adapterResult) => ({
+          adapterResult,
+          page: buildQaIssueRecordPage(issue, adapterResult.cases ?? []),
+        }))
+        .catch((error) => {
+          qaIssueRecordCache.delete(issue.id)
+          throw error
+        }),
+    )
+  }
+  const { adapterResult, page } = await qaIssueRecordCache.get(issue.id)
+  return { catalog, issue, adapterResult, page }
+}
+
+export async function getQaIssueRecordPage(viewId) {
+  const { page } = await loadQaIssueContext(viewId)
+  return page
+}
+
+async function prepareQaInvestigation(viewId, selectedRecordId = null) {
+  const context = await loadQaIssueContext(viewId)
+  const { catalog, issue, adapterResult, page } = context
+  const selectedRow = selectedRecordId
+    ? page.rows.find((row) => row.id === selectedRecordId)
+    : page.rows[0]
+  if (!selectedRow) {
+    throw new Error('The selected QA row is not in the current preview. Refresh the QA view and select it again.')
+  }
+
+  const realCase = selectedRow.caseId
+    ? adapterResult.cases?.find((candidate) => candidate.id === selectedRow.caseId)
+    : null
+  const caseItem = realCase
     ? {
-        ...adapterResult.cases[0],
+        ...realCase,
         qaEvidence: {
-          ...adapterResult.cases[0].qaEvidence,
+          ...realCase.qaEvidence,
           categoryId: issue.group.id,
           category: issue.group.label,
           statewideCount: issue.count,
           localMatchCount: adapterResult.cases.length,
+          selectedRecordId: selectedRow.id,
+          selectedRecord: selectedRow.attributes,
         },
       }
-    : buildEvidenceOnlyQaCase(issue, adapterResult)
+    : selectedRow.mock
+      ? buildMockQaCase(issue, selectedRow)
+      : buildEvidenceOnlyQaCase(issue, adapterResult)
 
   const preparedCase = {
     ...caseItem,
     skillMemory: getSkillMemoryTarget(caseItem),
   }
   dynamicCases.set(preparedCase.id, preparedCase)
-  return { catalog, issue, adapterResult, caseItem: preparedCase }
+  return { catalog, issue, adapterResult, page, selectedRow, caseItem: preparedCase }
 }
 
 async function validatePublisherHandoff(handoffPath, mode) {
@@ -1833,6 +1874,8 @@ function qaInvestigationPrompt(prepared) {
   return [
     `The reviewer selected statewide QA category ${prepared.issue.id}: ${prepared.issue.description}.`,
     `The daily report count is ${prepared.issue.count.toLocaleString()}.`,
+    `Investigate only selected QA row ${prepared.selectedRow.id}: ${prepared.selectedRow.address}, ${prepared.selectedRow.municipality}.`,
+    `The selected row source is ${prepared.selectedRow.sourceLabel}${prepared.selectedRow.mock ? ' and is explicitly non-authoritative mock data' : ''}.`,
     skillDirection,
     'After loading the named skill, call get_qa_investigation_packet with the relationship subject that fits this view. It returns the case, record evidence, approved relationship context, and town selection together.',
     'If the local evidence confirms the controlled logical correction, stage it for human review and validate it.',
@@ -1842,7 +1885,7 @@ function qaInvestigationPrompt(prepared) {
   ].join(' ')
 }
 
-async function investigateQaCategory({ viewId, baseUrl, model, onEvent, signal }) {
+async function investigateQaCategory({ viewId, recordId, baseUrl, model, onEvent, signal }) {
   onEvent?.({
     id: 'qa-evidence',
     type: 'status',
@@ -1850,13 +1893,13 @@ async function investigateQaCategory({ viewId, baseUrl, model, onEvent, signal }
     title: 'Read QA evidence',
     detail: viewId,
   })
-  const prepared = await prepareQaInvestigation(viewId)
+  const prepared = await prepareQaInvestigation(viewId, recordId)
   onEvent?.({
     id: 'qa-evidence',
     type: 'status',
     phase: 'completed',
     title: 'QA evidence ready',
-    detail: `${prepared.issue.count.toLocaleString()} statewide results · ${prepared.adapterResult.cases?.length ?? 0} local test ${prepared.adapterResult.cases?.length === 1 ? 'case' : 'cases'}`,
+    detail: `${prepared.selectedRow.address} · ${prepared.selectedRow.sourceLabel}`,
   })
   onEvent?.({
     id: 'town-resolution',
@@ -1878,6 +1921,7 @@ async function investigateQaCategory({ viewId, baseUrl, model, onEvent, signal }
   })
   const payload = {
     issue: prepared.issue,
+    selectedRecord: prepared.selectedRow,
     localResultCount: prepared.adapterResult.cases?.length ?? 0,
     caseItem: prepared.caseItem,
     townExtractUrl: prepared.caseItem.townExtractSummary
@@ -1933,6 +1977,17 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
         return sendJson(response, 200, loadQaCatalog())
       }
 
+      if (
+        request.method === 'GET'
+        && pathParts[0] === 'api'
+        && pathParts[1] === 'qa'
+        && pathParts[2] === 'issues'
+        && pathParts[3]
+        && pathParts[4] === 'records'
+      ) {
+        return sendJson(response, 200, await getQaIssueRecordPage(pathParts[3]))
+      }
+
       if (request.method === 'GET' && url.pathname === '/api/audit/proposal-history') {
         return sendJson(response, 200, getProposalAuditInfo())
       }
@@ -1952,6 +2007,7 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
         && pathParts[3]
         && pathParts[4] === 'investigate-stream'
       ) {
+        const body = await readJson(request)
         startEventStream(response)
         const abortController = new AbortController()
         response.on('close', () => abortController.abort())
@@ -1969,6 +2025,7 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
           })
           const result = await investigateQaCategory({
             viewId: pathParts[3],
+            recordId: body.recordId,
             baseUrl,
             model,
             onEvent: (event) => sendEventStream(response, 'activity', event),
@@ -1996,8 +2053,10 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
         && pathParts[3]
         && pathParts[4] === 'investigate'
       ) {
+        const body = await readJson(request)
         return sendJson(response, 200, await investigateQaCategory({
           viewId: pathParts[3],
+          recordId: body.recordId,
           baseUrl,
           model,
         }))
