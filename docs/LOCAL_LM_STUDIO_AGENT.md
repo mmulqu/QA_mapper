@@ -8,7 +8,7 @@ For the normal local workflow, double-click **Start MAD QA Workbench.cmd** in th
 
 For manual development:
 
-1. In LM Studio, load a tool-capable model and start its local server. The current workstation has `qwen3-4b-thinking-2507` available at `http://127.0.0.1:1234/v1`.
+1. In LM Studio, load a vision- and tool-capable model and start its local server. The default on this workstation is `gemma-4-e4b-it` at `http://127.0.0.1:1234/v1`; another OpenAI-compatible vision model can be selected with `LM_STUDIO_MODEL`.
 2. In one PowerShell window, start the local agent bridge:
 
    ```powershell
@@ -45,7 +45,7 @@ The defaults are intentionally local:
 
 ```text
 LM_STUDIO_URL=http://127.0.0.1:1234/v1
-LM_STUDIO_MODEL=qwen3-4b-thinking-2507
+LM_STUDIO_MODEL=gemma-4-e4b-it
 MAD_AGENT_HOST=127.0.0.1
 MAD_AGENT_PORT=8787
 ```
@@ -69,6 +69,7 @@ The model is limited to the selected case and receives these tools:
 - `get_qa_investigation_packet` — combined case, QA-row, town-resolution, and relationship context for an automatic category investigation
 - `get_feature`
 - `get_related`
+- `capture_map_evidence` — render one active-case point, structure, or road segment over the MassGIS basemap or 2025 orthoimagery and attach the PNG to the next model turn
 - `stage_fixture_draft`
 - `validate_draft`
 - `get_mad_schema_context` — a narrow read of approved MAD relationship metadata
@@ -78,6 +79,10 @@ The model is limited to the selected case and receives these tools:
 - `massgis_find_nearby`
 
 The MassGIS GeoServer tools are read-only and query only public MassGIS WFS evidence. They run from the local bridge, save any returned GeoJSON only under the ignored `.runtime/geoserver-evidence/` directory, and never receive MAD credentials. The agent describes a GeoServer layer before interpreting it and treats the result as supporting evidence, never as the sole basis for an edit.
+
+`capture_map_evidence` accepts a feature key from the active case, not an arbitrary coordinate, path, or map-service URL. The bridge calculates a bounded viewport, zooms out only enough to fit the selected geometry, mosaics the configured MassGIS tiles, draws the current case vectors and labels, and saves a 768-by-768 PNG under `.runtime/map-evidence/`. Red is current geometry, green is proposed geometry, and gold identifies the selected feature. Only the path, background, feature, and viewport metadata enter the audit transcript; the base64 image is kept out of browser events and attached directly to the model's next turn.
+
+Image delivery uses the OpenAI-compatible multimodal content shape with `text` and `image_url` parts. There is no Qwen-, Gemma-, or model-ID branch. The selected LM Studio model must nevertheless be a vision-language model that supports both image input and the tool-calling behavior used by the workbench. Exact coordinates and MAD identifiers continue to come from vector and relationship tools, never from model estimates based on pixels.
 
 `stage_fixture_draft` is deliberately narrow for this MVP: it stages the case's server-declared proposal, retains its source snapshot hash, and runs local validation. It does not create arbitrary geometry or attributes, write any source record, or publish an edit. Evidence-only cases always withhold a draft. A real-data proposal may also be marked reviewable but not publishable when an export omitted the stable identifier required to target the edit safely.
 
@@ -118,5 +123,6 @@ On 2026-07-24, the bridge was exercised against the local LM Studio model `qwen3
 - It answered a routine case-ID question without loading the skill.
 - It investigated `MADV_QA_ASL_DUPES`, read the Rockport record evidence, resolved Rockport through the town/community lookup, and staged the controlled two-to-one lookup-row proposal.
 - It kept that proposal's Accept action blocked because the DBF export did not retain the lookup `OBJECTID`.
+- It rendered real MassGIS 2025 imagery around structure `STR-44108`, attached the PNG through the generic multimodal message contract, and `gemma-4-e4b-it` correctly read the selected feature ID from the image.
 
-This confirms the browser proxy, local bridge, LM Studio tool loop, Rockport town-extract adapter, draft validation, and response contract. It is not a test against production MAD.
+This confirms the browser proxy, local bridge, LM Studio tool and image loop, Rockport town-extract adapter, draft validation, and response contract. It is not a test against production MAD.

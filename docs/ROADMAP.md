@@ -18,6 +18,7 @@ This is the running implementation record for the workbench. Check off a gate on
 - [x] On-demand MAD QA AP, MAD schema, and public MassGIS GeoServer skills; the bridge exposes only bounded, read-only schema and GeoServer evidence tools.
 - [x] Category-specific reviewer memory for MA, AV, AP, APC, BRV, BSA, MSN, SNV, ESZ, SN, and ASL, with a required LM Studio memory-authoring tool call, guarded writes, provenance, deduplication, on-demand loading, and reviewer-visible file activity.
 - [x] Public MassGIS basemap and 2025 natural-color imagery tile services in Leaflet.
+- [x] Case-scoped agent map-evidence tool that fits and highlights an address point, structure, or road segment over either MassGIS background, saves an auditable PNG, and attaches it to vision-capable LM Studio models through a model-name-agnostic message contract.
 - [x] Parse the supplied daily QA report into data-category buckets and show only non-zero checks.
 - [x] Preview record-level rows for a selected QA category, label mock versus fixture evidence, and run only a reviewer-selected batch of up to 10 rows.
 - [x] Process selected rows sequentially with a visible Stop action that aborts the active LM Studio stream and leaves remaining rows unrun.
@@ -118,6 +119,7 @@ Codex can already read and change local files in this workspace, including synth
 - [x] Add an allow-listed, on-demand skill loader. The model sees only a compact skill index and loads a full `SKILL.md` only when a prompt explicitly calls for it.
 - [x] Require automatic QA investigations to load their exact category skill, report memory loads in the live activity stream, and treat reviewer text as untrusted scoped guidance.
 - [x] Stream automatic category investigations over a localhost event channel; normalize common LM Studio reasoning/content formats without tying the UI to one model ID.
+- [x] Give vision-capable local models a controlled `capture_map_evidence` tool; exact coordinates remain vector-derived while the snapshot supplies basemap or orthoimage interpretation.
 - [ ] Replace fixture-draft staging with `stage_draft_operation` against the resettable relational Gate 1 sandbox.
 - [ ] Exercise each initial skill as Codex against resettable fixtures.
 - [ ] Record every tool call, proposed operation, validator result, and human decision in the test audit trail.
@@ -167,4 +169,4 @@ The eventual browser chat must call an authenticated server-side agent service. 
 - Basemap: `MassGISBasemap` public ArcGIS Online tile cache.
 - Imagery: `Massachusetts_Aerial_Imagery_2025` public natural-color tile cache.
 
-The services are browser-referenced only; no credential is stored in the client. See the official [MassGIS basemap service](https://tiles.arcgis.com/tiles/hGdibHYSPO59RG1h/arcgis/rest/services/MassGISBasemap/MapServer) and [2025 aerial-imagery page](https://www.mass.gov/info-details/massgis-data-2025-aerial-imagery).
+The services are referenced by the browser and by the localhost-only map-evidence renderer; no credential is stored in the client. Agent snapshots are written only to the ignored `.runtime/map-evidence/` directory. See the official [MassGIS basemap service](https://tiles.arcgis.com/tiles/hGdibHYSPO59RG1h/arcgis/rest/services/MassGISBasemap/MapServer) and [2025 aerial-imagery page](https://www.mass.gov/info-details/massgis-data-2025-aerial-imagery).

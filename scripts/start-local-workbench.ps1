@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [string]$Model = 'qwen3-4b-thinking-2507',
+  [string]$Model = 'gemma-4-e4b-it',
   [switch]$NoBrowser
 )
 
@@ -46,6 +46,14 @@ try {
   $npm = Get-Command npm.cmd -ErrorAction Stop
   $lms = Get-Command lms.exe -ErrorAction Stop
 
+  $nodeModules = Join-Path $projectRoot 'node_modules'
+  $mapRendererPackage = Join-Path $nodeModules 'sharp'
+  if (-not (Test-Path $nodeModules) -or -not (Test-Path $mapRendererPackage)) {
+    Write-Host 'Installing app packages for the local workbench...'
+    & $npm.Source install
+    if ($LASTEXITCODE -ne 0) { throw 'npm install failed.' }
+  }
+
   if (-not (Test-LocalUrl -Url "http://127.0.0.1:$lmStudioPort/v1/models")) {
     Write-Host 'Starting the local LM Studio server...'
     Start-Process -FilePath $lms.Source -ArgumentList @('server', 'start', '--port', $lmStudioPort) -WindowStyle Hidden | Out-Null
@@ -65,12 +73,6 @@ try {
     Start-Process -FilePath $node.Source -ArgumentList @('scripts/agent-server.mjs') -WorkingDirectory $projectRoot -WindowStyle Hidden | Out-Null
   }
   Wait-ForLocalUrl -Url "http://127.0.0.1:$agentPort/api/health" -ServiceName 'Local MAD agent bridge'
-
-  if (-not (Test-Path (Join-Path $projectRoot 'node_modules'))) {
-    Write-Host 'Installing app packages for the first run...'
-    & $npm.Source install
-    if ($LASTEXITCODE -ne 0) { throw 'npm install failed.' }
-  }
 
   if (-not (Test-PortListener -Port $appPort)) {
     Write-Host 'Starting the MAD QA Workbench...'
