@@ -1393,6 +1393,8 @@ export default function App() {
             onClose={() => setShowAgent(false)}
             reviewerFeedback={activeFeedback}
             initialResult={activeDataView === 'qa' ? qaInvestigation.result : null}
+            runActivity={activeDataView === 'qa' ? qaActivity : []}
+            automaticStatus={activeDataView === 'qa' ? qaInvestigation.status : 'idle'}
             onDraftStaged={(draft, feedback, proposals) => {
               setAgentDrafts((current) => ({ ...current, [caseItem.id]: draft }))
               if (feedback) setReviewerFeedback((current) => ({ ...current, [caseItem.id]: feedback }))

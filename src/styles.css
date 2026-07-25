@@ -1281,9 +1281,26 @@ button:focus-visible {
 .agent-header > div { min-width: 0; }
 .agent-header > div > span { display: block; color: #bad1d8; font-size: 13px; }
 .agent-header h2 { margin: 3px 0 0; color: #fff; font-size: 19px; line-height: 1.15; }
+.agent-panel.is-transcript { grid-template-rows: auto minmax(0, 1fr); }
+.agent-transcript-back { width: 42px; height: 42px; color: #d7ecf1; background: transparent; border: 1px solid #7da1b0; display: grid; place-items: center; }
+.agent-transcript-back:hover { color: #fff; background: #285b74; }
 .agent-scroll-region { min-height: 0; overflow-y: auto; }
 .agent-scope-note { min-height: 58px; margin: 0; padding: 13px 18px; color: #43585f; background: #edf3f1; border-bottom: 1px solid #b8c6c3; display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 1.35; }
 .agent-scope-note svg { flex: 0 0 auto; color: #174d6d; }
+.agent-transcript-trigger { width: calc(100% - 36px); min-width: 0; margin: 15px 18px 0; padding: 12px 13px; color: #174d6d; background: #f6faf8; border: 1px solid #aac0b9; display: flex; align-items: flex-start; gap: 10px; text-align: left; }
+.agent-transcript-trigger:hover { color: #fff; background: #174d6d; border-color: #174d6d; }
+.agent-transcript-trigger > svg { flex: 0 0 auto; margin-top: 2px; }
+.agent-transcript-trigger > span { min-width: 0; display: grid; gap: 3px; }
+.agent-transcript-trigger strong { font-size: 14px; line-height: 1.3; }
+.agent-transcript-trigger small { color: #52666d; font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
+.agent-transcript-trigger:hover small { color: #d7ecf1; }
+.agent-run-transcript { padding: 0 18px 22px; }
+.agent-run-transcript .activity-event { grid-template-columns: 80px minmax(0, 1fr); }
+.agent-run-transcript .activity-event-tag { padding: 16px 9px 16px 0; font-size: 10px; }
+.agent-run-transcript .activity-event-body { padding: 14px 0 15px 13px; }
+.agent-run-transcript .activity-event-body > p,
+.agent-run-transcript .activity-markdown { font-size: 13px; }
+.agent-transcript-empty { margin: 0; padding: 26px 0; color: #52666d; font-size: 14px; line-height: 1.45; }
 .agent-review-feedback { margin: 15px 18px 0; padding: 12px 13px; color: #704f0c; background: #fff6df; border: 1px solid #c6a560; display: grid; gap: 5px; }
 .agent-review-feedback strong { font-size: 13px; }
 .agent-review-feedback p { margin: 0; color: #3e3320; font-size: 14px; line-height: 1.4; }
