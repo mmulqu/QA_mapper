@@ -31,3 +31,32 @@ test('loads the Rockport-supported duplicate lookup issue from the supplied repo
   assert.equal(issue.localFixture.town, 'Rockport')
   assert.equal(catalog.summary.issueCount, 75)
 })
+
+test('marks the controlled Rockport fault views without changing statewide counts', () => {
+  const catalog = loadQaCatalog()
+  const controlled = catalog.groups
+    .flatMap((group) => group.issues)
+    .filter((issue) => issue.localFixture?.status === 'controlled-fault')
+  const pointType = findQaIssue('MADV_QA_AP_DOM_PTTYPE', catalog)
+
+  assert.equal(controlled.length, 6)
+  assert.equal(pointType.count, 3)
+  assert.equal(pointType.localFixture.scenarioId, 'rockport-ap-invalid-point-type')
+  assert.match(pointType.localFixture.note, /original Rockport export remains unchanged/)
+})
+
+test('hides controlled fault fixtures when the reversible overlay is disabled', () => {
+  const previous = process.env.MAD_ROCKPORT_FAULTS
+  process.env.MAD_ROCKPORT_FAULTS = 'disabled'
+  try {
+    const catalog = loadQaCatalog()
+    const pointType = findQaIssue('MADV_QA_AP_DOM_PTTYPE', catalog)
+    const sourceDuplicate = findQaIssue('MADV_QA_ASL_DUPES', catalog)
+
+    assert.equal(pointType.localFixture, null)
+    assert.equal(sourceDuplicate.localFixture.status, 'available')
+  } finally {
+    if (previous === undefined) delete process.env.MAD_ROCKPORT_FAULTS
+    else process.env.MAD_ROCKPORT_FAULTS = previous
+  }
+})

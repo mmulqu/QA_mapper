@@ -4,6 +4,45 @@ import { resolve } from 'node:path'
 
 const PROJECT_ROOT = resolve(fileURLToPath(new URL('../', import.meta.url)))
 export const QA_REPORT_PATH = resolve(PROJECT_ROOT, 'data', 'MAD_QA_20260724.txt')
+export const ROCKPORT_FAULT_MANIFEST_PATH = resolve(PROJECT_ROOT, 'data', 'rockport_qa_faults.json')
+
+function loadRockportFaultIndex() {
+  try {
+    const manifest = JSON.parse(readFileSync(ROCKPORT_FAULT_MANIFEST_PATH, 'utf8'))
+    return new Map(
+      (manifest.scenarios ?? []).map((scenario) => [scenario.viewId, scenario]),
+    )
+  } catch {
+    return new Map()
+  }
+}
+
+const ROCKPORT_FAULTS_BY_VIEW = loadRockportFaultIndex()
+
+function rockportFaultsEnabled() {
+  return !['0', 'false', 'no', 'off', 'disabled']
+    .includes(String(process.env.MAD_ROCKPORT_FAULTS ?? '1').trim().toLowerCase())
+}
+
+function localFixtureForView(viewId) {
+  if (viewId === 'MADV_QA_ASL_DUPES') {
+    return {
+      town: 'Rockport',
+      townId: 252,
+      status: 'available',
+      note: 'One duplicate relationship group is reproducible in the immutable Rockport extract.',
+    }
+  }
+  const fault = ROCKPORT_FAULTS_BY_VIEW.get(viewId)
+  if (!fault || !rockportFaultsEnabled()) return null
+  return {
+    town: 'Rockport',
+    townId: 252,
+    status: 'controlled-fault',
+    scenarioId: fault.id,
+    note: `${fault.title}. The original Rockport export remains unchanged.`,
+  }
+}
 
 const FRIENDLY_GROUP_NAMES = {
   MASTER_ADDRESS: 'Master addresses',
@@ -88,14 +127,7 @@ export function parseQaReport(reportText) {
         ordinal: pendingOrdinal || String(currentGroup.issues.length + 1),
         description: cleanDescription(pendingDescription) || queryMatch[1].replaceAll('_', ' '),
         count,
-        localFixture: queryMatch[1].toUpperCase() === 'MADV_QA_ASL_DUPES'
-          ? {
-              town: 'Rockport',
-              townId: 252,
-              status: 'available',
-              note: 'One duplicate relationship group is reproducible in the local Rockport extract.',
-            }
-          : null,
+        localFixture: localFixtureForView(queryMatch[1].toUpperCase()),
       })
       pendingDescription = []
       pendingOrdinal = null

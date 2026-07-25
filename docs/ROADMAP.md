@@ -25,6 +25,7 @@ This is the running implementation record for the workbench. Check off a gate on
 - [x] Process selected rows sequentially with a visible Stop action that aborts the active LM Studio stream and leaves remaining rows unrun.
 - [x] Run a selected QA row through the local agent, resolve its issue town through MAD community/town identifiers, and load that town's read-only vector extract.
 - [x] Reproduce the Rockport `MADV_QA_ASL_DUPES` issue at 8 Alpaca Court and stage its controlled review-only duplicate-row proposal.
+- [x] Add six reversible Rockport fault-injection scenarios across MA, AP, AV, ASL, and BRV, with immutable source data, known evaluation answers, bounded map previews, and category-memory retry support.
 - [ ] Replace the synthetic case source with a server-backed case API.
 
 ## Gate 1 — test-data sandbox
@@ -42,6 +43,7 @@ This is the running implementation record for the workbench. Check off a gate on
 ### Current Gate 1 progress
 
 - [x] Load the supplied Rockport MAD shapefile/DBF extract into a read-only local adapter with address points, centroids, structures, parcels, streets, communities, and related MAD tables.
+- [x] Add an enabled-by-default, non-destructive Rockport fault overlay that can be disabled to restore the original read path without rewriting any source file.
 - [x] Expose full Rockport vectors in Leaflet and bounded attribute/preset-relate requests through the localhost bridge.
 - [ ] Replace the Rockport shapefile/DBF export with an ID-preserving format; the current lookup table omits `OBJECTID`, so duplicate-row approval is intentionally blocked.
 - [x] Downloaded the public Brookline Basic Address Points and Advanced Address List exports on 2026-07-24.

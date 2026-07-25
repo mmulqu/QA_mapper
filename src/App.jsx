@@ -220,7 +220,13 @@ function CaseDocket({
                           <span className="qa-issue-copy">
                             <strong>{issue.description}</strong>
                             <small>{issue.id}</small>
-                            {issue.localFixture ? <em>Rockport test data available</em> : null}
+                            {issue.localFixture ? (
+                              <em>
+                                {issue.localFixture.status === 'controlled-fault'
+                                  ? 'Rockport controlled fault available'
+                                  : 'Rockport test data available'}
+                              </em>
+                            ) : null}
                           </span>
                           {working ? <LoaderCircle className="agent-spinner" size={17} /> : <ChevronRight size={17} />}
                         </button>

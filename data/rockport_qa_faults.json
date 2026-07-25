@@ -1,0 +1,348 @@
+{
+  "schemaVersion": "1.0.0",
+  "fixtureId": "rockport-controlled-faults-2026-07",
+  "description": "Reversible in-memory faults applied to the immutable Rockport MAD export for local-agent evaluation.",
+  "sourceDirectory": "data/MAD_data_rockport",
+  "scenarios": [
+    {
+      "id": "rockport-ma-invalid-status",
+      "viewId": "MADV_QA_MA_DOM_ADDRSTAT",
+      "categoryId": "MASTER_ADDRESS",
+      "title": "Invalid Master Address status",
+      "address": "14 ROWE AVENUE",
+      "subject": {
+        "addressPointId": "M_271482_935923",
+        "masterAddressId": 16872,
+        "structureId": "271482_935923",
+        "locId": "F_890721_3070573",
+        "variantId": "{5310F322-B6A6-4DA8-AFB9-DD4C14950B43}"
+      },
+      "mutations": [
+        {
+          "action": "set",
+          "file": "MAD_MASTER_ADDRESS.dbf",
+          "match": { "MASTER_ADD": 16872 },
+          "field": "ADDRESS_ST",
+          "sourceValue": "ACTIVE",
+          "faultValue": "BROKEN_STATUS"
+        },
+        {
+          "action": "set",
+          "file": "MADV_MASTER_ADDRESS_STNAME.dbf",
+          "match": { "MASTER_ADD": 16872 },
+          "field": "ADDRESS_ST",
+          "sourceValue": "ACTIVE",
+          "faultValue": "BROKEN_STATUS"
+        }
+      ],
+      "qaRecord": {
+        "file": "MAD_MASTER_ADDRESS.dbf",
+        "match": { "MASTER_ADD": 16872 }
+      },
+      "map": {
+        "anchorLayer": "addresses",
+        "anchorId": "M_271482_935923",
+        "recordBundleKey": "addresses:M_271482_935923",
+        "relevantLayers": ["addresses", "centroids", "structures", "parcels", "roads"],
+        "path": [
+          {
+            "from": "MAD_MASTER_ADDRESS.ADDRESS_POINT_ID",
+            "to": "MAD_ADDRESS_POINTM.ADDRESS_POINT_ID"
+          }
+        ]
+      },
+      "observations": [
+        "The selected Master Address has ADDRESS_STATUS BROKEN_STATUS.",
+        "The linked address point, street, municipality, and variants remain internally consistent.",
+        "BROKEN_STATUS is not an approved Master Address status value."
+      ],
+      "expected": {
+        "classification": "confirmed",
+        "operationType": "update_master_address",
+        "entityLabel": "Master Address",
+        "entityId": "16872",
+        "mapTarget": "addresses:M_271482_935923",
+        "field": "ADDRESS_STATUS",
+        "before": "BROKEN_STATUS",
+        "after": "ACTIVE"
+      }
+    },
+    {
+      "id": "rockport-ap-invalid-point-type",
+      "viewId": "MADV_QA_AP_DOM_PTTYPE",
+      "categoryId": "ADDRESS_POINTM",
+      "title": "Invalid address-point type",
+      "address": "5 DOYLES COVE ROAD",
+      "subject": {
+        "addressPointId": "M_272497_934767",
+        "masterAddressId": 20104,
+        "structureId": "272491_934765",
+        "locId": "F_894018_3066813",
+        "variantId": "{FA136376-873C-4694-8620-1845A40D33F7}"
+      },
+      "mutations": [
+        {
+          "action": "set",
+          "file": "MAD_ADDRESS_POINTM.shp",
+          "match": { "ADDRESS_PO": "M_272497_934767" },
+          "field": "POINT_TYPE",
+          "sourceValue": "BC",
+          "faultValue": "ROOFTOP"
+        }
+      ],
+      "qaRecord": {
+        "file": "MAD_ADDRESS_POINTM.shp",
+        "match": { "ADDRESS_PO": "M_272497_934767" }
+      },
+      "map": {
+        "anchorLayer": "addresses",
+        "anchorId": "M_272497_934767",
+        "recordBundleKey": "addresses:M_272497_934767",
+        "relevantLayers": ["addresses", "centroids", "structures", "parcels", "roads"],
+        "path": []
+      },
+      "observations": [
+        "The selected address point has POINT_TYPE ROOFTOP.",
+        "The point intersects one linked structure polygon and BUILDING_COUNT is 1.",
+        "ROOFTOP is not in the approved MAD address-point type domain."
+      ],
+      "expected": {
+        "classification": "confirmed",
+        "operationType": "update_address_point",
+        "entityLabel": "Address point",
+        "entityId": "M_272497_934767",
+        "mapTarget": "addresses:M_272497_934767",
+        "field": "POINT_TYPE",
+        "before": "ROOFTOP",
+        "after": "BC"
+      }
+    },
+    {
+      "id": "rockport-av-point-link-mismatch",
+      "viewId": "MADV_QA_AV_APID_MISMATCH",
+      "categoryId": "ADDRESS_VARIANT",
+      "title": "Address Variant point-link mismatch",
+      "address": "1 RIDGEWOOD ROAD",
+      "subject": {
+        "addressPointId": "M_273118_932155",
+        "masterAddressId": 17933,
+        "structureId": "273118_932155",
+        "locId": "F_896067_3058209",
+        "variantId": "{7A29EAB9-D607-4AAE-935F-091247BB5DE8}"
+      },
+      "mutations": [
+        {
+          "action": "set",
+          "file": "MAD_ADDRESS_VARIANTS.dbf",
+          "match": { "ADDRESS_VA": "{7A29EAB9-D607-4AAE-935F-091247BB5DE8}" },
+          "field": "ADDRESS_PO",
+          "sourceValue": "M_273118_932155",
+          "faultValue": "M_273925_934533"
+        }
+      ],
+      "qaRecord": {
+        "file": "MAD_ADDRESS_VARIANTS.dbf",
+        "match": { "ADDRESS_VA": "{7A29EAB9-D607-4AAE-935F-091247BB5DE8}" }
+      },
+      "map": {
+        "anchorLayer": "addresses",
+        "anchorId": "M_273118_932155",
+        "recordBundleKey": "addresses:M_273118_932155",
+        "relevantLayers": ["addresses", "centroids", "structures", "parcels", "roads"],
+        "path": [
+          {
+            "from": "MAD_ADDRESS_VARIANTS.MASTER_ADDRESS_ID",
+            "to": "MAD_MASTER_ADDRESS.MASTER_ADDRESS_ID"
+          },
+          {
+            "from": "MAD_MASTER_ADDRESS.ADDRESS_POINT_ID",
+            "to": "MAD_ADDRESS_POINTM.ADDRESS_POINT_ID"
+          }
+        ]
+      },
+      "observations": [
+        "The Address Variant points to M_273925_934533.",
+        "Its linked Master Address 17933 points to M_273118_932155.",
+        "The variant and Master Address otherwise describe the same Ridgewood Road address."
+      ],
+      "expected": {
+        "classification": "confirmed",
+        "operationType": "update_address_variant",
+        "entityLabel": "Address Variant",
+        "entityId": "{7A29EAB9-D607-4AAE-935F-091247BB5DE8}",
+        "mapTarget": "addresses:M_273118_932155",
+        "field": "ADDRESS_POINT_ID",
+        "before": "M_273925_934533",
+        "after": "M_273118_932155"
+      }
+    },
+    {
+      "id": "rockport-ap-missing-structure-lookup",
+      "viewId": "MADV_QA_AP_NO_STRUCT_LUT",
+      "categoryId": "ADDRESS_POINTM",
+      "title": "Building address point missing its structure lookup",
+      "address": "10 RAILROAD AVENUE",
+      "subject": {
+        "addressPointId": "M_271811_934261",
+        "masterAddressId": 19114,
+        "structureId": "271811_934261",
+        "locId": "F_891765_3065155",
+        "variantId": "{CBDCBCCE-412E-4B14-B3A0-3C4B5FC7728F}"
+      },
+      "mutations": [
+        {
+          "action": "delete",
+          "file": "MAD_ADDPT_STRUCT_LUT.dbf",
+          "match": {
+            "ADDRESS_PO": "M_271811_934261",
+            "STRUCTURE_": "271811_934261"
+          }
+        }
+      ],
+      "qaRecord": {
+        "file": "MAD_ADDRESS_POINTM.shp",
+        "match": { "ADDRESS_PO": "M_271811_934261" }
+      },
+      "map": {
+        "anchorLayer": "addresses",
+        "anchorId": "M_271811_934261",
+        "recordBundleKey": "addresses:M_271811_934261",
+        "relevantLayers": ["addresses", "centroids", "structures", "parcels", "roads"],
+        "path": []
+      },
+      "observations": [
+        "The BC address point has no row in MAD_ADDPT_STRUCT_LUT.",
+        "The point intersects structure 271811_934261 on the same parcel.",
+        "The point has BUILDING_COUNT 1 and a related active Master Address."
+      ],
+      "expected": {
+        "classification": "confirmed",
+        "operationType": "link_point_to_structure",
+        "entityLabel": "Structure lookup relationship",
+        "entityId": "M_271811_934261 → 271811_934261",
+        "mapTarget": "addresses:M_271811_934261",
+        "field": "STRUCTURE_ID",
+        "before": null,
+        "after": "271811_934261"
+      }
+    },
+    {
+      "id": "rockport-asl-bad-structure-town",
+      "viewId": "MADV_QA_ASL_BAD_TOWN_ID",
+      "categoryId": "ADDPT_STRUCT_LUT",
+      "title": "Structure lookup has the wrong town identifier",
+      "address": "8 SMITH STREET",
+      "subject": {
+        "addressPointId": "M_271845_934752",
+        "masterAddressId": 17249,
+        "structureId": "271845_934752",
+        "locId": "F_891870_3066752",
+        "variantId": "{B63DB68D-27EC-4E0A-BF0D-DAFFC2F9086C}"
+      },
+      "mutations": [
+        {
+          "action": "set",
+          "file": "MAD_ADDPT_STRUCT_LUT.dbf",
+          "match": {
+            "ADDRESS_PO": "M_271845_934752",
+            "STRUCTURE_": "271845_934752"
+          },
+          "field": "STRUCTURE1",
+          "sourceValue": 252,
+          "faultValue": 999
+        }
+      ],
+      "qaRecord": {
+        "file": "MAD_ADDPT_STRUCT_LUT.dbf",
+        "match": {
+          "ADDRESS_PO": "M_271845_934752",
+          "STRUCTURE_": "271845_934752"
+        }
+      },
+      "map": {
+        "anchorLayer": "structures",
+        "anchorId": "271845_934752",
+        "recordBundleKey": "addresses:M_271845_934752",
+        "relevantLayers": ["structures", "addresses", "centroids", "parcels", "roads"],
+        "path": [
+          {
+            "from": "MAD_ADDPT_STRUCT_LUT.STRUCTURE_ID",
+            "to": "MAD_STRUCTURES_POLY.STRUCTURE_ID"
+          }
+        ]
+      },
+      "observations": [
+        "The lookup row has STRUCTURE_TOWN_ID 999.",
+        "The linked address point and structure polygon both have GEOGRAPHIC_TOWN_ID 252.",
+        "MAD_MSAG_COMMUNITY_POLYM resolves ADDRESS_TOWN_ID 252 to Rockport."
+      ],
+      "expected": {
+        "classification": "confirmed",
+        "operationType": "update_structure_lookup",
+        "entityLabel": "Structure lookup relationship",
+        "entityId": "M_271845_934752 → 271845_934752",
+        "mapTarget": "structures:271845_934752",
+        "field": "STRUCTURE_TOWN_ID",
+        "before": 999,
+        "after": 252
+      }
+    },
+    {
+      "id": "rockport-brv-parity-mismatch",
+      "viewId": "MADV_QA_BRV_PARITY_EOM",
+      "categoryId": "BASE_RANGE_VARIANT",
+      "title": "Street-range parity contradicts its values",
+      "address": "LAUREL ACRES",
+      "subject": {
+        "addressPointId": "M_273283_932187",
+        "masterAddressId": 18670,
+        "structureId": "273283_932187",
+        "locId": "F_896608_3058351",
+        "variantId": "{EFEA2AF7-255C-448B-A6A5-83AEE3837914}",
+        "baseRangeId": "{E1D5DC6F-4A47-4836-8CB7-E232424540D7}",
+        "baseSegmentId": "{468439C8-31BF-45CB-A9C3-F475D6D5EB96}"
+      },
+      "mutations": [
+        {
+          "action": "set",
+          "file": "MAD_BASE_RANGE_VARIANTS.dbf",
+          "match": { "BASE_RANGE": "{E1D5DC6F-4A47-4836-8CB7-E232424540D7}" },
+          "field": "PARITY_LEF",
+          "sourceValue": "E",
+          "faultValue": "O"
+        }
+      ],
+      "qaRecord": {
+        "file": "MAD_BASE_RANGE_VARIANTS.dbf",
+        "match": { "BASE_RANGE": "{E1D5DC6F-4A47-4836-8CB7-E232424540D7}" }
+      },
+      "map": {
+        "anchorLayer": "roads",
+        "anchorId": "{468439C8-31BF-45CB-A9C3-F475D6D5EB96}",
+        "recordBundleKey": "roads:{468439C8-31BF-45CB-A9C3-F475D6D5EB96}",
+        "relevantLayers": ["roads", "addresses", "centroids", "parcels"],
+        "path": [
+          {
+            "from": "MAD_BASE_RANGE_VARIANTS.BASE_SEGMENT_ID",
+            "to": "MAD_BASE_STREET_ARC.BASE_SEGMENT_ID"
+          }
+        ]
+      },
+      "observations": [
+        "The left range is 2 through 16 while PARITY_LEFT is O.",
+        "Every populated value on the left range is even.",
+        "Nearby Laurel Acres address points provide sequence context but do not independently authorize a range edit."
+      ],
+      "expected": {
+        "classification": "confirmed",
+        "operationType": "update_base_range_variant",
+        "entityLabel": "Base range variant",
+        "entityId": "{E1D5DC6F-4A47-4836-8CB7-E232424540D7}",
+        "mapTarget": "roads:{468439C8-31BF-45CB-A9C3-F475D6D5EB96}",
+        "field": "PARITY_LEFT",
+        "before": "O",
+        "after": "E"
+      }
+    }
+  ]
+}

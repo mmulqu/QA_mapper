@@ -8,6 +8,7 @@ import {
   createThinkingTagDecoder,
   buildProposalLineage,
   getProposalAuditInfo,
+  getQaIssueRecordPage,
   getQaRecordMapPreview,
   getReviewerFeedback,
   getSkillIndex,
@@ -62,6 +63,22 @@ test('loads a bounded pre-agent map through the selected QA row relationship', a
     from: 'MAD_ADDPT_STRUCT_LUT.STRUCTURE_ID',
     to: 'MAD_STRUCTURES_POLY.STRUCTURE_ID',
   }])
+})
+
+test('loads a controlled Rockport fault as a real previewable QA row', async () => {
+  const page = await getQaIssueRecordPage('MADV_QA_AP_DOM_PTTYPE')
+  const row = page.rows.find((candidate) => !candidate.mock)
+  const preview = await getQaRecordMapPreview(page.view.id, row.id)
+  const point = preview.records['addresses:M_272497_934767']
+  const pointType = point.attributes.find((attribute) => attribute.sourceField === 'POINT_TYPE')
+
+  assert.equal(page.statewideCount, 3)
+  assert.equal(row.sourceLabel, 'Rockport controlled fault')
+  assert.equal(row.mapPreview.status, 'available')
+  assert.equal(preview.selectedFeatureKey, 'addresses:M_272497_934767')
+  assert.equal(pointType.value, 'ROOFTOP')
+  assert.equal(preview.caseItem.publishEligible, false)
+  assert.match(preview.caseItem.publishBlocker, /pre-agent map preview/)
 })
 
 test('keeps skill instructions out of the default skill index', () => {

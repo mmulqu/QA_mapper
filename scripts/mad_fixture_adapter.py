@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ from shapely.ops import unary_union
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ROCKPORT_ROOT = PROJECT_ROOT / "data" / "MAD_data_rockport"
+FAULT_MANIFEST_PATH = PROJECT_ROOT / "data" / "rockport_qa_faults.json"
 ROCKPORT_TOWN_ID = 252
 
 SPATIAL_LAYERS = {
@@ -125,11 +127,103 @@ def clean_properties(row: pd.Series, excluded: set[str] | None = None) -> dict[s
     return properties
 
 
-def read_frame(filename: str) -> gpd.GeoDataFrame | pd.DataFrame:
+def load_fault_manifest() -> dict[str, Any]:
+    if not FAULT_MANIFEST_PATH.exists():
+        return {"schemaVersion": "1.0.0", "scenarios": []}
+    return json.loads(FAULT_MANIFEST_PATH.read_text(encoding="utf8"))
+
+
+def faults_enabled() -> bool:
+    return str(os.environ.get("MAD_ROCKPORT_FAULTS", "1")).strip().lower() not in {
+        "0", "false", "no", "off", "disabled",
+    }
+
+
+def frame_match(frame: pd.DataFrame, match: dict[str, Any]) -> pd.Series:
+    mask = pd.Series(True, index=frame.index)
+    for field, expected in match.items():
+        if field not in frame.columns:
+            return pd.Series(False, index=frame.index)
+        if expected is None:
+            mask &= frame[field].isna()
+        else:
+            mask &= frame[field].astype(str) == str(expected)
+    return mask
+
+
+def apply_controlled_faults(filename: str, frame: gpd.GeoDataFrame | pd.DataFrame) -> gpd.GeoDataFrame | pd.DataFrame:
+    if not faults_enabled():
+        return frame
+    mutations = [
+        mutation
+        for scenario in load_fault_manifest().get("scenarios", [])
+        for mutation in scenario.get("mutations", [])
+        if mutation.get("file") == filename
+    ]
+    if not mutations:
+        return frame
+
+    result = frame.copy()
+    for mutation in mutations:
+        matches = frame_match(result, mutation.get("match", {}))
+        if mutation.get("action") == "delete":
+            result = result.loc[~matches].copy()
+            continue
+        if mutation.get("action") == "set":
+            field = mutation.get("field")
+            if field not in result.columns:
+                raise ValueError(f"Controlled fault field {field} is missing from {filename}.")
+            result.loc[matches, field] = mutation.get("faultValue")
+            continue
+        raise ValueError(f"Unsupported controlled fault action in {filename}: {mutation.get('action')}")
+    return result
+
+
+def read_source_frame(filename: str) -> gpd.GeoDataFrame | pd.DataFrame:
     path = ROCKPORT_ROOT / filename
     if not path.exists():
         raise FileNotFoundError(f"Missing Rockport export file: {path.name}")
     return gpd.read_file(path)
+
+
+def read_frame(filename: str) -> gpd.GeoDataFrame | pd.DataFrame:
+    return apply_controlled_faults(filename, read_source_frame(filename))
+
+
+def validate_fault_manifest() -> dict[str, Any]:
+    errors: list[str] = []
+    checked_mutations = 0
+    for scenario in load_fault_manifest().get("scenarios", []):
+        for mutation in scenario.get("mutations", []):
+            checked_mutations += 1
+            source = read_source_frame(mutation["file"])
+            source_matches = frame_match(source, mutation.get("match", {}))
+            if not source_matches.any():
+                errors.append(f"{scenario['id']}: source target not found in {mutation['file']}")
+                continue
+            if mutation["action"] == "set":
+                field = mutation["field"]
+                observed = {scalar(value) for value in source.loc[source_matches, field].tolist()}
+                if scalar(mutation.get("sourceValue")) not in observed:
+                    errors.append(
+                        f"{scenario['id']}: expected source {field}={mutation.get('sourceValue')}, observed {sorted(str(value) for value in observed)}"
+                    )
+            patched = apply_controlled_faults(mutation["file"], source)
+            patched_matches = frame_match(patched, mutation.get("match", {}))
+            if mutation["action"] == "delete" and patched_matches.any():
+                errors.append(f"{scenario['id']}: delete overlay did not remove its target")
+            if mutation["action"] == "set":
+                field = mutation["field"]
+                observed = {scalar(value) for value in patched.loc[patched_matches, field].tolist()}
+                if scalar(mutation.get("faultValue")) not in observed:
+                    errors.append(
+                        f"{scenario['id']}: fault {field}={mutation.get('faultValue')} was not applied"
+                    )
+    return {
+        "valid": not errors,
+        "checkedMutations": checked_mutations,
+        "errors": errors,
+    }
 
 
 def town_community(town_id: int) -> dict[str, Any]:
@@ -366,6 +460,22 @@ def find_duplicate_structure_lookups() -> list[dict[str, Any]]:
             "qaEvidence": {
                 "viewId": "MADV_QA_ASL_DUPES",
                 "viewPurpose": "Find functionally duplicative MAD_ADDPT_STRUCT_LUT rows.",
+                "mapRelation": {
+                    "qaEntity": "MAD_ADDPT_STRUCT_LUT",
+                    "anchorEntity": "MAD_STRUCTURES_POLY",
+                    "anchorLayer": "structures",
+                    "anchorFeatureKeys": [f"structures:{structure_id}"],
+                    "recordBundleKey": f"addresses:{address_point_id}",
+                    "relevantLayers": ["structures", "addresses", "centroids", "parcels", "roads"],
+                    "path": [{
+                        "from": "MAD_ADDPT_STRUCT_LUT.STRUCTURE_ID",
+                        "to": "MAD_STRUCTURES_POLY.STRUCTURE_ID",
+                    }],
+                    "description": (
+                        "The nonspatial lookup row is mapped through STRUCTURE_ID to its structure polygon. "
+                        "The address point remains nearby relational context."
+                    ),
+                },
                 "relationship": relation,
                 "matchingRowCount": len(rows),
                 "matchingRows": duplicate_rows,
@@ -398,6 +508,291 @@ def find_duplicate_structure_lookups() -> list[dict[str, Any]]:
         }
         cases.append(case_payload)
     return cases
+
+
+QA_ENTITY_NAMES = {
+    "MASTER_ADDRESS": "MAD_MASTER_ADDRESS",
+    "ADDRESS_VARIANT": "MAD_ADDRESS_VARIANTS",
+    "ADDRESS_POINTM": "MAD_ADDRESS_POINTM",
+    "ADDRESS_POINTM_CENTROID": "MAD_ADDRESS_POINTM_CENTROID",
+    "BASE_RANGE_VARIANT": "MAD_BASE_RANGE_VARIANTS",
+    "BASE_STREET_ARC": "MAD_BASE_STREET_ARC",
+    "ADDPT_STRUCT_LUT": "MAD_ADDPT_STRUCT_LUT",
+}
+
+ANCHOR_ENTITY_NAMES = {
+    "addresses": "MAD_ADDRESS_POINTM",
+    "centroids": "MAD_ADDRESS_POINTM_CENTROID",
+    "structures": "MAD_STRUCTURES_POLY",
+    "parcels": "L3_TAXPAR_POLY_ASSESS",
+    "roads": "MAD_BASE_STREET_ARC",
+}
+
+ANCHOR_LABELS = {
+    "addresses": "address point",
+    "centroids": "address centroid",
+    "structures": "structure polygon",
+    "parcels": "tax parcel",
+    "roads": "base street arc",
+}
+
+
+def scenario_map_relation(scenario: dict[str, Any]) -> dict[str, Any]:
+    map_config = scenario["map"]
+    anchor_layer = map_config["anchorLayer"]
+    anchor_key = f"{anchor_layer}:{map_config['anchorId']}"
+    path = map_config.get("path", [])
+    anchor_label = ANCHOR_LABELS[anchor_layer]
+    description = (
+        " → ".join(f"{step['from']} → {step['to']}" for step in path)
+        if path
+        else f"{QA_ENTITY_NAMES[scenario['categoryId']]} supplies its own {anchor_label} geometry."
+    )
+    return {
+        "qaEntity": QA_ENTITY_NAMES[scenario["categoryId"]],
+        "anchorEntity": ANCHOR_ENTITY_NAMES[anchor_layer],
+        "anchorLayer": anchor_layer,
+        "anchorFeatureKeys": [anchor_key],
+        "recordBundleKey": map_config.get("recordBundleKey", anchor_key),
+        "relevantLayers": map_config["relevantLayers"],
+        "path": path,
+        "description": description,
+    }
+
+
+def matching_rows(filename: str, match: dict[str, Any]) -> pd.DataFrame:
+    frame = read_frame(filename)
+    return frame.loc[frame_match(frame, match)].copy()
+
+
+def build_fault_case(scenario: dict[str, Any]) -> dict[str, Any]:
+    subject = scenario["subject"]
+    address_point_id = str(subject["addressPointId"])
+    structure_id = str(subject["structureId"])
+    loc_id = str(subject["locId"])
+    master_address_id = subject["masterAddressId"]
+    variant_id = str(subject["variantId"])
+    relation = scenario_map_relation(scenario)
+
+    address_points = read_frame(SPATIAL_LAYERS["addresses"]["file"])
+    structures = read_frame(SPATIAL_LAYERS["structures"]["file"])
+    parcels = read_frame(SPATIAL_LAYERS["parcels"]["file"])
+    roads = read_frame(SPATIAL_LAYERS["roads"]["file"])
+    master_addresses = read_frame(TABLE_FILES["master-address"])
+    master_address_streets = read_frame(TABLE_FILES["master-address-street"])
+    address_variants = read_frame(TABLE_FILES["address-variant"])
+    lookups = read_frame(TABLE_FILES["structure-lookup"])
+    ranges = read_frame(TABLE_FILES["range-variant"])
+
+    ap_matches = find_row(address_points, "ADDRESS_PO", address_point_id)
+    structure_matches = find_row(structures, "STRUCTURE_", structure_id)
+    parcel_matches = find_row(parcels, "LOC_ID", loc_id)
+    master_matches = find_row(master_addresses, "MASTER_ADD", str(master_address_id))
+    master_street_matches = find_row(master_address_streets, "MASTER_ADD", str(master_address_id))
+    variant_matches = find_row(address_variants, "MASTER_ADD", str(master_address_id))
+    lookup_matches = find_row(lookups, "ADDRESS_PO", address_point_id)
+    range_matches = (
+        find_row(ranges, "BASE_RANGE", str(subject["baseRangeId"]))
+        if subject.get("baseRangeId")
+        else ranges.iloc[0:0]
+    )
+
+    anchor_key = relation["anchorFeatureKeys"][0]
+    anchor_layer, anchor_id = anchor_key.split(":", 1)
+    anchor_definition = SPATIAL_LAYERS[anchor_layer]
+    anchor_frame = read_frame(anchor_definition["file"])
+    anchor_matches = find_row(anchor_frame, anchor_definition["id_field"], anchor_id)
+    if anchor_matches.empty and anchor_definition.get("fallback_id_field"):
+        anchor_matches = find_row(anchor_frame, anchor_definition["fallback_id_field"], anchor_id)
+    if anchor_matches.empty:
+        raise ValueError(f"Controlled fault {scenario['id']} has no map anchor {anchor_key}.")
+    anchor_geometry = anchor_matches.iloc[0].geometry
+    center = representative_latlngs(anchor_geometry)[0]
+
+    ap_geometry = ap_matches.iloc[0].geometry if not ap_matches.empty else anchor_geometry.representative_point()
+    ap_latlngs = representative_latlngs(ap_geometry)
+    structure_geometry = structure_matches.iloc[0].geometry if not structure_matches.empty else None
+    parcel_geometry = parcel_matches.iloc[0].geometry if not parcel_matches.empty else None
+
+    if subject.get("baseSegmentId"):
+        road_matches = find_row(roads, "BASE_SEGME", str(subject["baseSegmentId"]))
+        road_geometry = road_matches.iloc[0].geometry if not road_matches.empty else None
+    else:
+        distances = roads.geometry.distance(ap_geometry.centroid)
+        road_geometry = roads.loc[distances.idxmin()].geometry if not roads.empty else None
+
+    nearby = address_points[address_points.geometry.distance(anchor_geometry.centroid) <= 120].copy()
+    nearby = nearby[nearby["ADDRESS_PO"] != address_point_id].head(10)
+    nearby_points = []
+    for _, nearby_row in nearby.iterrows():
+        positions = representative_latlngs(nearby_row.geometry)
+        if positions:
+            nearby_points.append({
+                "id": str(nearby_row["ADDRESS_PO"]),
+                "address": str(nearby_row.get("LABEL_TEXT") or nearby_row["ADDRESS_PO"]),
+                "position": positions[0],
+            })
+
+    qa_rows = matching_rows(scenario["qaRecord"]["file"], scenario["qaRecord"]["match"])
+    if qa_rows.empty:
+        raise ValueError(f"Controlled fault {scenario['id']} did not produce its expected QA record.")
+    current_qa_record = clean_properties(qa_rows.iloc[0])
+    expected = scenario["expected"]
+    source_rows = [
+        clean_properties(row)
+        for mutation in scenario["mutations"]
+        for _, row in matching_rows(mutation["file"], mutation["match"]).iterrows()
+    ]
+    map_target = expected["mapTarget"]
+    case_id = f"{scenario['viewId']}-FAULT-{scenario['id'].removeprefix('rockport-').upper()}"
+
+    return {
+        "id": case_id,
+        "address": scenario["address"].title(),
+        "municipality": "Rockport",
+        "issueType": scenario["title"],
+        "issueCode": scenario["viewId"],
+        "status": "ready",
+        "priority": "Training",
+        "confidence": 100,
+        "reportedBy": f"{scenario['viewId']} controlled fault",
+        "reportedAt": "2026-07-25T00:00:00-04:00",
+        "due": "Training review",
+        "operationKind": expected["operationType"],
+        "recommendation": "Investigate the flagged record and stage a correction only when the related MAD evidence confirms it.",
+        "rationale": " ".join(scenario["observations"]),
+        "publishEligible": False,
+        "publishBlocker": "Controlled Rockport fault scenarios are training overlays and can never be published.",
+        "center": center,
+        "zoom": 19 if anchor_layer != "roads" else 17,
+        "geometry": {
+            "current": ap_latlngs[0] if ap_latlngs else center,
+            "currentParts": ap_latlngs,
+            "proposed": None,
+            "parcel": latlng_ring(parcel_geometry),
+            "structure": latlng_ring(structure_geometry),
+            "road": latlng_ring(road_geometry),
+            "nearby": nearby_points,
+        },
+        "records": {
+            "addressPoint": {
+                "id": address_point_id,
+                "globalId": "Not present in shapefile export",
+            },
+            "masterAddress": {
+                "id": str(master_address_id),
+                "globalId": (
+                    str(master_matches.iloc[0].get("MA_UUID"))
+                    if not master_matches.empty
+                    else "Unavailable"
+                ),
+            },
+            "structure": {
+                "id": structure_id,
+                "globalId": "Not present in shapefile export",
+            },
+            "variant": {
+                "id": variant_id,
+                "value": scenario["address"],
+            },
+        },
+        "operations": [{
+            "id": "OP-1",
+            "type": expected["operationType"],
+            "target": expected["entityId"],
+            "detail": f"Restore {expected['field']} after human review of the controlled fault.",
+            "preconditions": {
+                "faultScenarioId": scenario["id"],
+                "currentValue": expected["before"],
+                "sourceRowHash": row_hash(source_rows),
+            },
+        }],
+        "changes": [{
+            "id": "CHG-1",
+            "entityLabel": expected["entityLabel"],
+            "entityId": expected["entityId"],
+            "mapTarget": map_target,
+            "summary": f"Correct {expected['field']} for {scenario['address'].title()}",
+            "fields": [{
+                "field": expected["field"],
+                "before": expected["before"],
+                "after": expected["after"],
+            }],
+        }],
+        "evidence": [
+            {
+                "source": scenario["viewId"],
+                "date": "2026-07-25",
+                "detail": observation,
+                "tone": "orange" if index == 0 else "blue",
+            }
+            for index, observation in enumerate(scenario["observations"])
+        ],
+        "snapshot": {
+            "exportedAt": "2026-07-24T13:02:00-04:00",
+            "source": "MAD_data_rockport immutable source + controlled in-memory fault overlay",
+            "version": load_fault_manifest()["fixtureId"],
+            "rowHash": row_hash({
+                "scenario": scenario["id"],
+                "currentQaRecord": current_qa_record,
+                "sourceRows": source_rows,
+            }),
+            "wkid": 26986,
+            "stableIdsRetained": False,
+        },
+        "qaEvidence": {
+            "viewId": scenario["viewId"],
+            "viewPurpose": scenario["title"],
+            "categoryId": scenario["categoryId"],
+            "controlledFault": {
+                "scenarioId": scenario["id"],
+                "fixtureId": load_fault_manifest()["fixtureId"],
+                "sourceUnmodified": True,
+            },
+            "currentQaRecord": current_qa_record,
+            "observations": scenario["observations"],
+            "mapRelation": relation,
+            "relationshipEvidence": {
+                "addressPoint": clean_properties(ap_matches.iloc[0]) if not ap_matches.empty else None,
+                "masterAddresses": [clean_properties(row) for _, row in master_matches.iterrows()],
+                "masterAddressStreet": [clean_properties(row) for _, row in master_street_matches.iterrows()],
+                "addressVariants": [clean_properties(row) for _, row in variant_matches.head(20).iterrows()],
+                "structureLookups": [clean_properties(row) for _, row in lookup_matches.head(20).iterrows()],
+                "structure": clean_properties(structure_matches.iloc[0]) if not structure_matches.empty else None,
+                "baseRangeVariants": [clean_properties(row) for _, row in range_matches.iterrows()],
+            },
+            "townResolution": {
+                "selectedTown": "Rockport",
+                "addressTownId": 252,
+                "geographicTownId": 252,
+                "communityId": 270,
+                "lookupLayer": "MAD_MSAG_COMMUNITY_POLYM",
+            },
+        },
+        "townExtractSummary": {
+            "town": "Rockport",
+            "townId": ROCKPORT_TOWN_ID,
+            "communityId": 270,
+            "sourceDirectory": "data/MAD_data_rockport",
+            "selectionRule": "The controlled scenario retains Rockport town and community identifiers from the immutable source records.",
+        },
+    }
+
+
+def find_fault_cases(view_id: str) -> list[dict[str, Any]]:
+    if not faults_enabled():
+        return []
+    return [
+        build_fault_case(scenario)
+        for scenario in load_fault_manifest().get("scenarios", [])
+        if scenario["viewId"] == view_id
+    ]
+
+
+def find_cases_for_view(view_id: str) -> list[dict[str, Any]]:
+    if view_id == "MADV_QA_ASL_DUPES":
+        return find_duplicate_structure_lookups()
+    return find_fault_cases(view_id)
 
 
 def build_town_extract(town_id: int) -> dict[str, Any]:
@@ -482,9 +877,6 @@ def build_town_extract(town_id: int) -> dict[str, Any]:
 QA_PREVIEW_BUFFER_METERS = 120
 QA_PREVIEW_LAYER_LIMIT = 50
 QA_PREVIEW_TOTAL_LIMIT = 200
-QA_PREVIEW_LAYERS = {
-    "MADV_QA_ASL_DUPES": ["addresses", "centroids", "structures", "parcels", "roads"],
-}
 
 
 def feature_collection_for_frame(layer_id: str, definition: dict[str, Any], frame: gpd.GeoDataFrame) -> dict[str, Any]:
@@ -510,46 +902,56 @@ def feature_collection_for_frame(layer_id: str, definition: dict[str, Any], fram
 
 
 def build_qa_map_preview(view_id: str, record_id: str) -> dict[str, Any]:
-    if view_id not in QA_PREVIEW_LAYERS:
-        raise ValueError(
-            f"{view_id} does not have local record geometry. Production must resolve its approved QA-to-feature relate first."
-        )
-    cases = find_duplicate_structure_lookups()
+    cases = find_cases_for_view(view_id)
     case_item = next((candidate for candidate in cases if candidate["id"] == record_id), None)
     if case_item is None:
         raise ValueError("The selected QA row has no authoritative geometry in the local fixture.")
 
-    address_point_id = str(case_item["records"]["addressPoint"]["id"])
-    structure_id = str(case_item["records"]["structure"]["id"])
-    address_frame = read_frame(SPATIAL_LAYERS["addresses"]["file"])
-    structure_frame = read_frame(SPATIAL_LAYERS["structures"]["file"])
-    if structure_frame.crs != address_frame.crs:
-        structure_frame = structure_frame.to_crs(address_frame.crs)
-    structure_matches = find_row(structure_frame, "STRUCTURE_", structure_id)
-    anchor_geometries = [
-        geometry
-        for geometry in (structure_matches.geometry.tolist() if not structure_matches.empty else [])
-        if geometry is not None and not geometry.is_empty
-    ]
+    relation = case_item.get("qaEvidence", {}).get("mapRelation")
+    if not relation:
+        raise ValueError(f"{view_id} does not declare an approved QA-to-feature map relationship.")
+
+    anchor_geometries = []
+    anchor_crs: Any = None
+    for anchor_key in relation["anchorFeatureKeys"]:
+        layer_id, stable_id = anchor_key.split(":", 1)
+        definition = SPATIAL_LAYERS.get(layer_id)
+        if not definition:
+            raise ValueError(f"Unsupported controlled map-anchor layer: {layer_id}")
+        frame = read_frame(definition["file"])
+        matches = find_row(frame, definition["id_field"], stable_id)
+        if matches.empty and definition.get("fallback_id_field"):
+            matches = find_row(frame, definition["fallback_id_field"], stable_id)
+        if matches.empty:
+            continue
+        if anchor_crs is None:
+            anchor_crs = frame.crs
+        elif frame.crs != anchor_crs:
+            matches = matches.to_crs(anchor_crs)
+        anchor_geometries.extend(
+            geometry
+            for geometry in matches.geometry.tolist()
+            if geometry is not None and not geometry.is_empty
+        )
     if not anchor_geometries:
-        raise ValueError("The approved QA relationship did not resolve STRUCTURE_ID to a structure polygon.")
+        raise ValueError("The approved QA relationship did not resolve to a geometric feature.")
 
     anchor_geometry = unary_union(anchor_geometries)
     preview_area = anchor_geometry.buffer(QA_PREVIEW_BUFFER_METERS)
-    preview_area_wgs84 = gpd.GeoSeries([preview_area], crs=address_frame.crs).to_crs(4326)
+    preview_area_wgs84 = gpd.GeoSeries([preview_area], crs=anchor_crs).to_crs(4326)
     preview_bounds = [float(value) for value in preview_area_wgs84.total_bounds]
     layers = []
     remaining = QA_PREVIEW_TOTAL_LIMIT
 
-    for layer_id in QA_PREVIEW_LAYERS[view_id]:
+    for layer_id in relation["relevantLayers"]:
         if remaining <= 0:
             break
         definition = SPATIAL_LAYERS[layer_id]
         frame = read_frame(definition["file"])
         if not isinstance(frame, gpd.GeoDataFrame) or frame.empty:
             continue
-        if frame.crs != address_frame.crs:
-            frame = frame.to_crs(address_frame.crs)
+        if frame.crs != anchor_crs:
+            frame = frame.to_crs(anchor_crs)
         town_field = definition["town_field"]
         if town_field:
             frame = frame[frame[town_field] == ROCKPORT_TOWN_ID]
@@ -575,10 +977,7 @@ def build_qa_map_preview(view_id: str, record_id: str) -> dict[str, Any]:
             "geojson": feature_collection,
         })
 
-    record_bundle = build_record_bundle(
-        ROCKPORT_TOWN_ID,
-        f"addresses:{address_point_id}",
-    )
+    record_bundle = build_record_bundle(ROCKPORT_TOWN_ID, relation["recordBundleKey"])
     preview_case = {
         **case_item,
         "status": "preview",
@@ -587,23 +986,6 @@ def build_qa_map_preview(view_id: str, record_id: str) -> dict[str, Any]:
         "changes": [],
         "publishEligible": False,
         "publishBlocker": "A pre-agent map preview cannot be accepted or published.",
-    }
-    relation = {
-        "qaEntity": "MAD_ADDPT_STRUCT_LUT",
-        "anchorEntity": "MAD_STRUCTURES_POLY",
-        "anchorFeatureKeys": [
-            f"structures:{structure_id}",
-        ],
-        "path": [
-            {
-                "from": "MAD_ADDPT_STRUCT_LUT.STRUCTURE_ID",
-                "to": "MAD_STRUCTURES_POLY.STRUCTURE_ID",
-            },
-        ],
-        "description": (
-            "The nonspatial lookup row is mapped through STRUCTURE_ID to its structure polygon. "
-            "The address point remains nearby relational context."
-        ),
     }
     extract = {
         "kind": "mad-qa-map-preview-extract",
@@ -633,7 +1015,7 @@ def build_qa_map_preview(view_id: str, record_id: str) -> dict[str, Any]:
         "caseItem": preview_case,
         "extract": extract,
         "records": record_bundle["records"],
-        "selectedFeatureKey": f"structures:{structure_id}",
+        "selectedFeatureKey": relation["anchorFeatureKeys"][0],
         "relation": relation,
         "limits": {
             "bufferMeters": QA_PREVIEW_BUFFER_METERS,
@@ -702,6 +1084,10 @@ def build_record_bundle(town_id: int, record_key: str) -> dict[str, Any]:
         loc_id = scalar(address_row.get("LOC_ID"))
 
         masters = find_row(read_frame(TABLE_FILES["master-address-street"]), "ADDRESS_PO", address_point_id)
+        master_address_ids = {
+            str(int(value)) if isinstance(value, (int, float)) and not pd.isna(value) else str(value)
+            for value in masters["MASTER_ADD"].dropna().tolist()
+        }
         for _, row in masters.head(50).iterrows():
             identifier = int(row["MASTER_ADD"]) if pd.notna(row["MASTER_ADD"]) else "unknown"
             add_record(f"master-address:{identifier}", "Master Address", identifier, row)
@@ -721,7 +1107,11 @@ def build_record_bundle(town_id: int, record_key: str) -> dict[str, Any]:
             if not parcels.empty:
                 add_record(f"parcels:{loc_id}", "Tax parcel", loc_id, parcels.iloc[0])
 
-        variants = find_row(read_frame(TABLE_FILES["address-variant"]), "ADDRESS_PO", address_point_id)
+        all_variants = read_frame(TABLE_FILES["address-variant"])
+        variants = all_variants[
+            (all_variants["ADDRESS_PO"].astype(str) == str(address_point_id))
+            | (all_variants["MASTER_ADD"].astype(str).isin(master_address_ids))
+        ]
         for index, row in variants.head(50).iterrows():
             variant_id = scalar(row.get("ADDRESS_VA")) or f"{address_point_id}|{index}"
             add_record(f"address-variant:{variant_id}", "Address variant", variant_id, row)
@@ -787,10 +1177,13 @@ def main() -> None:
     preview.add_argument("--view-id", required=True)
     preview.add_argument("--record-id", required=True)
 
+    subparsers.add_parser("fault-status")
+
     args = parser.parse_args()
     try:
         if args.command == "investigate":
-            if args.view_id != "MADV_QA_ASL_DUPES":
+            cases = find_cases_for_view(args.view_id)
+            if not cases:
                 result = {
                     "viewId": args.view_id,
                     "supported": False,
@@ -801,17 +1194,28 @@ def main() -> None:
                     ),
                 }
             else:
-                cases = find_duplicate_structure_lookups()
                 result = {
                     "viewId": args.view_id,
                     "supported": True,
                     "cases": cases,
-                    "message": f"Found {len(cases)} duplicate relationship group(s) in the Rockport export.",
+                    "message": f"Loaded {len(cases)} record-level Rockport QA case(s).",
                 }
         elif args.command == "town-extract":
             result = build_town_extract(args.town_id)
         elif args.command == "map-preview":
             result = build_qa_map_preview(args.view_id, args.record_id)
+        elif args.command == "fault-status":
+            manifest = load_fault_manifest()
+            validation = validate_fault_manifest()
+            result = {
+                "kind": "rockport-controlled-fault-status",
+                "enabled": faults_enabled(),
+                "fixtureId": manifest.get("fixtureId"),
+                "scenarioCount": len(manifest.get("scenarios", [])),
+                "sourceUnmodified": True,
+                "manifest": str(FAULT_MANIFEST_PATH.relative_to(PROJECT_ROOT)),
+                "validation": validation,
+            }
         else:
             result = build_record_bundle(args.town_id, args.record_key)
         print(json.dumps({"ok": True, "result": result}, separators=(",", ":"), default=str))

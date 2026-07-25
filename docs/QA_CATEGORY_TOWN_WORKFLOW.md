@@ -33,7 +33,7 @@ Examples:
 - Base Range Variant checks resolve `MAD_BASE_RANGE_VARIANTS.BASE_SEGMENT_ID` to `MAD_BASE_STREET_ARC.BASE_SEGMENT_ID`.
 - Master Street Name and Street Name Variant checks traverse the approved street-name and range relationships before reaching the base street arc.
 
-The local registry declares contracts for MA, AV, AP, APC, BRV, BSA, MSN, SNV, ESZ, and ASL. Only the supplied Rockport ASL row currently has authoritative fixture keys and geometry. Mock rows display **Needs keys** rather than inventing a map location.
+The local registry declares contracts for MA, AV, AP, APC, BRV, BSA, MSN, SNV, ESZ, and ASL. The immutable source provides the Rockport ASL duplicate case, and the controlled fault overlay provides six additional real, relationship-complete Rockport rows across MA, AP, AV, BRV, and ASL. Other preview rows remain visibly marked mock data and display **Needs keys** rather than inventing a map location.
 
 ## Local Rockport proof case
 

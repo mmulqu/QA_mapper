@@ -1960,6 +1960,7 @@ async function health(baseUrl, model) {
   return {
     serviceId: 'mad-qa-agent-bridge',
     sourceVersion: process.env.MAD_AGENT_SOURCE_VERSION || 'unversioned',
+    rockportFaults: process.env.MAD_ROCKPORT_FAULTS === '0' ? 'disabled' : 'enabled',
     provider: 'LM Studio',
     baseUrl,
     model,

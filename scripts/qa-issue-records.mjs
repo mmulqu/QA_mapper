@@ -29,6 +29,8 @@ function recordFromCase(issue, caseItem, index) {
   const affectedRecordId = caseItem.records?.addressPoint?.id
     || caseItem.records?.masterAddress?.id
     || caseItem.id
+  const controlledFault = Boolean(caseItem.qaEvidence?.controlledFault)
+  const sourceLabel = controlledFault ? 'Rockport controlled fault' : 'Rockport MAD extract'
   return {
     id: caseItem.id,
     caseId: caseItem.id,
@@ -39,7 +41,7 @@ function recordFromCase(issue, caseItem, index) {
     affectedRecordId,
     issueDetail: caseItem.rationale || issue.description,
     severity: caseItem.priority || 'Review',
-    sourceLabel: 'Rockport MAD extract',
+    sourceLabel,
     mock: false,
     runnable: true,
     mapPreview: buildQaMapPreviewDescriptor(issue, caseItem),
@@ -50,7 +52,7 @@ function recordFromCase(issue, caseItem, index) {
       ADDRESS: caseItem.address,
       MUNICIPALITY: caseItem.municipality,
       ISSUE_DETAIL: caseItem.rationale || issue.description,
-      SOURCE: 'Rockport MAD extract',
+      SOURCE: sourceLabel,
     },
   }
 }

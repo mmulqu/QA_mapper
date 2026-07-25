@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
   [string]$Model = 'gemma-4-e4b-it',
+  [ValidateSet('enabled', 'disabled')]
+  [string]$RockportFaults = 'enabled',
   [switch]$NoBrowser
 )
 
@@ -121,13 +123,15 @@ try {
   }
 
   $env:LM_STUDIO_MODEL = $Model
+  $env:MAD_ROCKPORT_FAULTS = if ($RockportFaults -eq 'enabled') { '1' } else { '0' }
   $agentSourceVersion = Get-AgentSourceVersion
   $env:MAD_AGENT_SOURCE_VERSION = $agentSourceVersion
   $agentHealth = Get-AgentBridgeHealth
   $agentBridgeCurrent = $agentHealth -and
     $agentHealth.serviceId -eq 'mad-qa-agent-bridge' -and
     $agentHealth.sourceVersion -eq $agentSourceVersion -and
-    $agentHealth.model -eq $Model
+    $agentHealth.model -eq $Model -and
+    $agentHealth.rockportFaults -eq $RockportFaults
   if ((Test-PortListener -Port $agentPort) -and -not $agentBridgeCurrent) {
     Stop-StaleAgentBridge
   }
