@@ -252,6 +252,7 @@ export function appendReviewerSkillMemory({
   reviewerFeedback,
   modelId,
   agentEntry,
+  proposalContext,
   projectRoot = PROJECT_ROOT,
   auditPath = resolve(projectRoot, '.runtime', 'skill-memory-events.jsonl'),
 }) {
@@ -298,6 +299,8 @@ export function appendReviewerSkillMemory({
     `- Case: \`${caseId}\``,
     `- Rejected proposal: \`${proposalId || 'not-recorded'}\``,
     `- Model: \`${compactText(modelId || draft?.model, 200) || 'not-recorded'}\``,
+    `- Prior proposal context: \`${proposalContext?.available ? 'full-proposal-transcript' : 'staged-proposal-only'}\``,
+    `- Prior tool calls supplied: \`${Number(proposalContext?.toolCallCount) || 0}\``,
     `- Agent-authored title (JSON string): ${JSON.stringify(authoredEntry.title)}`,
     `- Agent-authored lesson (JSON string): ${JSON.stringify(authoredEntry.lesson)}`,
     `- Applies when (JSON array): ${JSON.stringify(authoredEntry.appliesWhen)}`,
@@ -325,6 +328,12 @@ export function appendReviewerSkillMemory({
     modelId: compactText(modelId || draft?.model, 200),
     feedback,
     agentEntry: authoredEntry,
+    proposalContext: {
+      available: Boolean(proposalContext?.available),
+      proposalId: compactText(proposalContext?.proposalId || proposalId, 240),
+      finalResponseAvailable: Boolean(proposalContext?.finalResponseAvailable),
+      toolCallCount: Number(proposalContext?.toolCallCount) || 0,
+    },
   }
   mkdirSync(dirname(auditPath), { recursive: true })
   appendFileSync(auditPath, `${JSON.stringify(event)}\n`, 'utf8')

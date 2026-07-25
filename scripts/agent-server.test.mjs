@@ -70,12 +70,27 @@ test('loads the full allow-listed skill only on request', () => {
 test('requires the local model to author one structured category memory tool call', async () => {
   const draft = createFixtureDraft(cases[0], 'Initial point placement proposal.')
   let modelRequest
+  const proposalContext = {
+    proposalId: draft.id,
+    caseId: cases[0].id,
+    model: 'local-test-model',
+    userPrompt: 'Review the point placement and stage a safe proposal.',
+    finalResponse: 'I moved the point to the east entrance after checking the structure.',
+    toolEvents: [{ name: 'get_feature', summary: 'Read address point AP-100294' }],
+    toolTranscript: [{
+      role: 'tool',
+      name: 'get_feature',
+      arguments: '{"feature_key":"address-point"}',
+      result: { id: 'AP-100294', attributes: { POINT_TYPE: 'BEP' } },
+    }],
+  }
   const memory = await authorReviewerSkillMemory({
     caseItem: cases[0],
     draft,
     reviewerFeedback: 'Use the verified driveway access rather than guessing an entrance from the footprint.',
     baseUrl: 'http://127.0.0.1:1234/v1',
     model: 'local-test-model',
+    proposalContext,
     requestModel: async (request) => {
       modelRequest = request
       return {
@@ -101,8 +116,17 @@ test('requires the local model to author one structured category memory tool cal
   assert.equal(modelRequest.toolChoice, 'required')
   assert.equal(modelRequest.tools.length, 1)
   assert.match(modelRequest.messages[1].content, /verified driveway access/)
+  assert.match(modelRequest.messages[1].content, /I moved the point to the east entrance/)
+  assert.match(modelRequest.messages[1].content, /"POINT_TYPE": "BEP"/)
+  assert.match(modelRequest.messages[1].content, new RegExp(draft.sourceSnapshot.rowHash))
   assert.equal(memory.skillId, 'mad-qa-ap')
   assert.equal(memory.modelId, 'local-test-model')
+  assert.deepEqual(memory.proposalContext, {
+    available: true,
+    proposalId: draft.id,
+    finalResponseAvailable: true,
+    toolCallCount: 1,
+  })
   assert.match(memory.agentEntry.lesson, /observed access evidence/)
 })
 

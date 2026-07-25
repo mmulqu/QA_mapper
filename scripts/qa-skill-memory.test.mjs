@@ -62,6 +62,12 @@ test('appends, audits, deduplicates, and selectively reloads reviewer memory', (
       avoid: 'Do not remove both lookup rows or choose a survivor from row order alone.',
       confidence: 'high',
     },
+    proposalContext: {
+      available: true,
+      proposalId: 'proposal-asl-1',
+      finalResponseAvailable: true,
+      toolCallCount: 4,
+    },
     projectRoot,
     auditPath,
   }
@@ -78,6 +84,8 @@ test('appends, audits, deduplicates, and selectively reloads reviewer memory', (
     assert.equal(existsSync(auditPath), true)
     assert.match(readFileSync(memoryPath, 'utf8'), /verified primary structure/)
     assert.match(readFileSync(memoryPath, 'utf8'), /Agent-authored reviewer lesson/)
+    assert.match(readFileSync(memoryPath, 'utf8'), /full-proposal-transcript/)
+    assert.equal(first.proposalContext.toolCallCount, 4)
     assert.equal(first.agentEntry.confidence, 'high')
     assert.equal(loaded.entryCount, 1)
     assert.equal(loaded.loadedEntryCount, 1)

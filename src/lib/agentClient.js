@@ -52,6 +52,13 @@ export async function getQaIssueCatalog() {
   return payload
 }
 
+export async function getQaIssueRecords(viewId, { signal } = {}) {
+  const response = await fetch(`/api/qa/issues/${encodeURIComponent(viewId)}/records`, { signal })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || 'The selected QA view rows could not be loaded.')
+  return payload
+}
+
 function parseEventBlock(block) {
   let event = 'message'
   const data = []
@@ -96,11 +103,11 @@ export async function readAgentEventStream(response, onActivity) {
   return result
 }
 
-export async function investigateQaIssue(viewId, { onActivity, signal } = {}) {
+export async function investigateQaIssue(viewId, { recordId, onActivity, signal } = {}) {
   const response = await fetch(`/api/qa/issues/${encodeURIComponent(viewId)}/investigate-stream`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
-    body: JSON.stringify({}),
+    body: JSON.stringify({ recordId }),
     signal,
   })
   if (!response.ok) {
@@ -110,8 +117,8 @@ export async function investigateQaIssue(viewId, { onActivity, signal } = {}) {
   return readAgentEventStream(response, onActivity)
 }
 
-export async function getTownExtract(url) {
-  const response = await fetch(url)
+export async function getTownExtract(url, { signal } = {}) {
+  const response = await fetch(url, { signal })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.error || 'The town extract could not be loaded.')
   return payload

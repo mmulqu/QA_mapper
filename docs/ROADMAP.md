@@ -19,7 +19,9 @@ This is the running implementation record for the workbench. Check off a gate on
 - [x] Category-specific reviewer memory for MA, AV, AP, APC, BRV, BSA, MSN, SNV, ESZ, SN, and ASL, with a required LM Studio memory-authoring tool call, guarded writes, provenance, deduplication, on-demand loading, and reviewer-visible file activity.
 - [x] Public MassGIS basemap and 2025 natural-color imagery tile services in Leaflet.
 - [x] Parse the supplied daily QA report into data-category buckets and show only non-zero checks.
-- [x] Run a selected QA category through the local agent, resolve its issue town through MAD community/town identifiers, and load that town's read-only vector extract.
+- [x] Preview record-level rows for a selected QA category, label mock versus fixture evidence, and run only a reviewer-selected batch of up to 10 rows.
+- [x] Process selected rows sequentially with a visible Stop action that aborts the active LM Studio stream and leaves remaining rows unrun.
+- [x] Run a selected QA row through the local agent, resolve its issue town through MAD community/town identifiers, and load that town's read-only vector extract.
 - [x] Reproduce the Rockport `MADV_QA_ASL_DUPES` issue at 8 Alpaca Court and stage its controlled review-only duplicate-row proposal.
 - [ ] Replace the synthetic case source with a server-backed case API.
 
@@ -74,6 +76,8 @@ The public point export is valuable for browser/display and metadata testing, bu
 - [x] Parse `data/MAD_QA_20260724.txt` into 10 non-zero data buckets and 75 selectable QA checks.
 - [x] Add the production-facing endpoint shape for category investigation and town-extract loading.
 - [x] Implement one local record-level view adapter for `MADV_QA_ASL_DUPES`.
+- [x] Add a bounded issue-row preview and explicit reviewer selection; current non-ASL rows are clearly labeled mock records for workflow testing.
+- [ ] Replace the 12-row mock preview with server-side paging, filtering, assignment, and stable row IDs from the approved SQL view.
 - [ ] Replace the report-file parser and single-view local adapter with the approved QA SQL view connection.
 
 **Acceptance test:** A new QA SQL result appears as one deduplicated case, opens with its affected features and evidence, and retains its original QA-result link.
@@ -95,7 +99,7 @@ Each skill must specify its allowed operations, required evidence, preconditions
 - [ ] Confirm actual MAD field mappings and edit policies with the data steward.
 - [ ] Create the skills and fixtures against the Gate 1 sandbox.
 - [x] Create category skill foundations and append-only reviewer-memory sidecars for the 11 primary QA data categories.
-- [x] Require the local agent to author a structured lesson from rejection feedback, route it to the exact category, retain proposal/model/source provenance, and load recent memory only with the selected category skill.
+- [x] Require the local agent to author a structured lesson from rejection feedback using the complete proposal-linked draft, final response, and tool transcript; route it to the exact category, retain proposal/model/source provenance, and load recent memory only with the selected category skill.
 - [ ] Add regression cases for correct, incorrect, and ambiguous proposals.
 - [ ] Require all changeset operations to be allow-listed and preconditioned by source hashes/edit dates.
 
