@@ -95,7 +95,7 @@ The three additional registered skills are [MAD QA AP](../agent-skills/mad-qa-ap
 
 ## Category reviewer memory
 
-MAD category skills are registered for MA, AV, AP, APC, BRV, BSA, MSN, SNV, ESZ, SN, and ASL. Rejecting a proposal starts a separate LM Studio memory-authoring turn. The model receives the category skill, compact case/proposal evidence, and quoted human correction; its only available tool is the required `write_category_skill_memory` call. The structured lesson is appended to the matching category's `references\reviewer-memory.md` sidecar only after server validation.
+MAD category skills are registered for MA, AV, AP, APC, BRV, BSA, MSN, SNV, ESZ, SN, and ASL. Rejecting a proposal starts a separate LM Studio memory-authoring turn. The model receives the category skill, complete case snapshot, complete staged draft, quoted human correction, and the exact proposal-linked prior run: original prompt, final answer, tool calls/arguments, and tool results. Its only available tool is the required `write_category_skill_memory` call. The structured lesson is appended to the matching category's `references\reviewer-memory.md` sidecar only after server validation.
 
 The model authors the lesson but cannot choose its path. The bridge routes the QA view through an exact allow-list, stamps the entry with its case, proposal, model, timestamp, and source feedback, deduplicates repeat submissions, and records a local JSONL audit event. Only the 12 most recent entries are injected, and only when that exact skill is loaded. The UI shows the active authoring state, target path, and generated lesson. See [SKILL_MEMORY.md](SKILL_MEMORY.md) for the complete contract.
 

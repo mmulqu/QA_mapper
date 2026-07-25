@@ -26,9 +26,11 @@ The bridge also appends a machine-readable write event to `.runtime\skill-memory
 
 ## Agent-authoring turn
 
-Rejection starts a separate, bounded LM Studio turn. The model receives the selected category skill, a compact case/proposal summary, and the quoted reviewer feedback. It has exactly one available tool: `write_category_skill_memory`.
+Rejection starts a separate, bounded LM Studio turn. The model receives the selected category skill, complete case snapshot, complete staged draft, quoted reviewer feedback, and the proposal-linked prior agent run. That prior run contains the original user prompt, any earlier reviewer feedback the proposal was responding to, final agent response, tool-call names and arguments, tool results, and browser-safe tool summaries. Hidden model reasoning is not treated as evidence or persisted. The memory editor therefore sees what the previous agent actually proposed, said, and inspected without relying on an inferred narrative.
 
 The tool is required. The model must author the structured lesson fields; the server does not manufacture a lesson from a template or simply paste feedback into the skill. The bridge validates lengths, lists, confidence, category routing, and the server-owned destination before appending anything. If LM Studio is unavailable, omits the tool call, or returns invalid fields, the write fails visibly and the dialog keeps the reviewer text for retry.
+
+Proposal context is keyed by the exact `proposal_id`, so a descendant proposal cannot accidentally inherit the tool transcript of its rejected parent. The local MVP retains up to 200 proposal contexts in bridge memory. A bridge restart clears those transcripts; in that fallback state the memory editor still receives the full case and staged proposal and is explicitly told not to infer missing prior activity.
 
 ## When memory enters model context
 

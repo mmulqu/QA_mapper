@@ -95,7 +95,7 @@ Each skill must specify its allowed operations, required evidence, preconditions
 - [ ] Confirm actual MAD field mappings and edit policies with the data steward.
 - [ ] Create the skills and fixtures against the Gate 1 sandbox.
 - [x] Create category skill foundations and append-only reviewer-memory sidecars for the 11 primary QA data categories.
-- [x] Require the local agent to author a structured lesson from rejection feedback, route it to the exact category, retain proposal/model/source provenance, and load recent memory only with the selected category skill.
+- [x] Require the local agent to author a structured lesson from rejection feedback using the complete proposal-linked draft, final response, and tool transcript; route it to the exact category, retain proposal/model/source provenance, and load recent memory only with the selected category skill.
 - [ ] Add regression cases for correct, incorrect, and ambiguous proposals.
 - [ ] Require all changeset operations to be allow-listed and preconditioned by source hashes/edit dates.
 
