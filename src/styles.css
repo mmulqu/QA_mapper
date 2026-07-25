@@ -370,6 +370,8 @@ button:focus-visible {
   grid-template-rows: auto auto minmax(0, 1fr) auto;
 }
 .qa-record-sheet.has-mock-notice { grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
+.qa-record-sheet.has-preview-error { grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
+.qa-record-sheet.has-mock-notice.has-preview-error { grid-template-rows: auto auto auto auto minmax(0, 1fr) auto; }
 .qa-record-header {
   min-width: 0;
   padding: 22px 25px 20px;
@@ -472,10 +474,24 @@ button:focus-visible {
   font-size: 12px;
   line-height: 1.4;
 }
+.qa-map-preview-error {
+  min-width: 0;
+  margin: 0;
+  padding: 9px 25px;
+  color: #7d3029;
+  background: #fae9e6;
+  border-bottom: 1px solid #cc8f88;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.qa-map-preview-error svg { flex: 0 0 auto; }
 .qa-record-table-wrap { min-width: 0; min-height: 0; overflow: auto; scrollbar-gutter: stable; }
 .qa-record-table {
   width: 100%;
-  min-width: 790px;
+  min-width: 930px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -492,10 +508,11 @@ button:focus-visible {
   text-align: start;
 }
 .qa-record-table th:first-child { width: 46px; }
-.qa-record-table th:nth-child(2) { width: 32%; }
-.qa-record-table th:nth-child(3) { width: 17%; }
-.qa-record-table th:nth-child(4) { width: 21%; }
-.qa-record-table th:last-child { width: 22%; border-inline-end: 0; }
+.qa-record-table th:nth-child(2) { width: 28%; }
+.qa-record-table th:nth-child(3) { width: 14%; }
+.qa-record-table th:nth-child(4) { width: 18%; }
+.qa-record-table th:nth-child(5) { width: 16%; }
+.qa-record-table th:last-child { width: 18%; border-inline-end: 0; }
 .qa-record-table td {
   min-width: 0;
   padding: 12px;
@@ -531,6 +548,22 @@ button:focus-visible {
   font-family: "Cascadia Code", Consolas, monospace;
   font-size: 11px;
 }
+.qa-map-cell { display: grid; justify-items: start; gap: 5px; }
+.qa-map-cell small { color: #5b6d72; font-size: 11px; line-height: 1.25; }
+.qa-map-preview-button {
+  min-height: 32px;
+  padding: 5px 9px;
+  color: #174d6d;
+  background: #f8faf7;
+  border: 1px solid #779098;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+}
+.qa-map-preview-button:hover:not(:disabled) { color: #fff; background: #174d6d; border-color: #174d6d; }
+.qa-map-preview-button:disabled { cursor: not-allowed; color: #6a7779; background: #e8edeb; border-color: #b6c0bd; }
 .qa-record-table td:last-child { display: grid; justify-items: start; gap: 5px; }
 .qa-record-table td:last-child small { color: #5b6d72; font-size: 11px; }
 .qa-row-source {
@@ -843,6 +876,32 @@ button:focus-visible {
 .map-layer-picker { position: absolute; z-index: 820; top: 18px; right: 18px; }
 .map-diff-control { position: absolute; z-index: 810; top: 70px; right: 18px; }
 .map-agent-control { position: absolute; z-index: 810; top: 122px; right: 18px; }
+.qa-preview-map-actions {
+  position: absolute;
+  z-index: 810;
+  top: 70px;
+  right: 18px;
+  display: grid;
+  gap: 8px;
+}
+.qa-preview-map-actions button {
+  min-width: 188px;
+  min-height: 42px;
+  padding: 8px 12px;
+  color: #173b50;
+  background: #f8faf7;
+  border: 1px solid #779098;
+  box-shadow: 3px 5px 16px rgba(16, 39, 48, 0.16);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 800;
+}
+.qa-preview-map-actions button:hover { background: #e2ecea; }
+.qa-preview-map-actions .run { color: #fff; background: #245f3e; border-color: #245f3e; }
+.qa-preview-map-actions .run:hover { background: #194c30; }
 .map-diff-control .map-tool { min-width: 136px; justify-content: space-between; }
 .map-agent-control .map-tool { min-width: 136px; }
 .map-diff-count { min-width: 22px; height: 22px; padding: 0 5px; color: #f7f8f5; background: #174d6d; display: grid; place-items: center; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; }
@@ -902,6 +961,26 @@ button:focus-visible {
 }
 
 .map-legend span { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.qa-preview-map-note {
+  position: absolute;
+  z-index: 800;
+  left: 18px;
+  bottom: 26px;
+  width: min(680px, calc(100% - 36px));
+  padding: 11px 13px;
+  color: #253e48;
+  background: rgba(250, 252, 251, 0.96);
+  border: 1px solid #93a9a5;
+  box-shadow: 3px 5px 14px rgba(16, 39, 48, 0.15);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.qa-preview-map-note > svg { flex: 0 0 auto; margin-top: 2px; color: #174d6d; }
+.qa-preview-map-note > span { min-width: 0; display: grid; gap: 2px; }
+.qa-preview-map-note strong { color: #173b50; font-size: 13px; }
+.qa-preview-map-note small { color: #40575f; font-size: 12px; line-height: 1.4; }
+.qa-preview-map-note em { color: #627277; font-size: 11px; font-style: normal; font-weight: 700; }
 .legend-dot { width: 12px; height: 12px; display: inline-block; border: 2px solid #fff; border-radius: 50%; }
 .legend-dot.current { background: #b63d31; box-shadow: 0 0 0 1px #b63d31; }
 .legend-dot.proposed { background: #287044; box-shadow: 0 0 0 1px #287044; }
@@ -1357,7 +1436,8 @@ button:focus-visible {
   .qa-record-toolbar { padding: 12px 18px; display: grid; }
   .qa-record-actions { flex-wrap: wrap; }
   .qa-mock-notice { padding: 9px 18px; align-items: flex-start; }
-  .qa-record-table { min-width: 720px; }
+  .qa-map-preview-error { padding: 9px 18px; align-items: flex-start; }
+  .qa-record-table { min-width: 860px; }
   .qa-record-footer { padding: 12px 18px; display: grid; }
   .qa-record-footer .qa-run-button { width: 100%; }
   .qa-batch-results { padding: 0 18px; }
@@ -1383,11 +1463,14 @@ button:focus-visible {
   .map-layer-picker { top: 13px; right: 13px; }
   .map-diff-control { top: 65px; right: 13px; }
   .map-agent-control { top: 117px; right: 13px; }
+  .qa-preview-map-actions { top: 65px; right: 13px; }
+  .qa-preview-map-actions button { min-width: 178px; min-height: 40px; }
   .map-diff-control .map-tool { width: auto; min-width: 44px; padding: 0 12px; font-size: 13px; }
   .map-agent-control .map-tool { width: auto; min-width: 44px; padding: 0 12px; font-size: 13px; }
   .map-tool { width: 44px; padding: 0; justify-content: center; font-size: 0; }
   .layer-popover { width: 210px; }
   .map-legend { left: 13px; right: 13px; bottom: 24px; justify-content: center; flex-wrap: wrap; }
+  .qa-preview-map-note { left: 13px; right: 13px; bottom: 24px; width: auto; }
   .feature-inspector { position: fixed; top: auto; right: 0; bottom: 0; left: 0; width: 100%; min-width: 0; max-height: min(74vh, 640px); border: 1px solid #879b99; }
   .change-diff-inspector { position: fixed; top: auto; right: 0; bottom: 0; left: 0; width: 100%; min-width: 0; max-height: min(78vh, 700px); }
   .agent-panel { position: fixed; top: auto; right: 0; bottom: 0; left: 0; width: 100%; min-width: 0; max-height: min(78vh, 700px); }

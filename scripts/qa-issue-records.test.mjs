@@ -27,7 +27,9 @@ test('builds a bounded QA preview without treating the statewide count as a work
   assert.equal(page.selectionLimit, QA_SELECTION_LIMIT)
   assert.equal(page.rows[0].mock, false)
   assert.equal(page.rows[0].caseId, realCase.id)
+  assert.equal(page.rows[0].mapPreview.status, 'awaiting-record-geometry')
   assert.equal(page.rows[1].mock, true)
+  assert.equal(page.rows[1].mapPreview.status, 'awaiting-record-geometry')
   assert.match(page.rows[1].sourceLabel, /Mock/)
 })
 

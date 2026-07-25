@@ -8,6 +8,7 @@ import {
   createThinkingTagDecoder,
   buildProposalLineage,
   getProposalAuditInfo,
+  getQaRecordMapPreview,
   getReviewerFeedback,
   getSkillIndex,
   loadSkill,
@@ -37,6 +38,30 @@ test('does not launch a desktop file manager on unsupported platforms', async ()
   assert.equal(launched, false)
   assert.equal(result.opened, false)
   assert.match(result.message, /Open .*proposal-history\.csv/)
+})
+
+test('loads a bounded pre-agent map through the selected QA row relationship', async () => {
+  const preview = await getQaRecordMapPreview(
+    'MADV_QA_ASL_DUPES',
+    'MADV_QA_ASL_DUPES-252-M-272655-933812',
+  )
+  const loadedCount = preview.extract.layers.reduce((sum, layer) => sum + layer.count, 0)
+
+  assert.equal(preview.kind, 'mad-qa-map-preview')
+  assert.equal(preview.extract.kind, 'mad-qa-map-preview-extract')
+  assert.equal(preview.extract.metadata.preAgent, true)
+  assert.equal(preview.limits.bufferMeters, 120)
+  assert.ok(loadedCount > 0)
+  assert.ok(loadedCount <= preview.limits.maxTotalFeatures)
+  assert.ok(preview.records['addresses:M_272655_933812'])
+  assert.equal(preview.selectedFeatureKey, 'structures:272643_933827')
+  assert.deepEqual(preview.relation.anchorFeatureKeys, [
+    'structures:272643_933827',
+  ])
+  assert.deepEqual(preview.relation.path, [{
+    from: 'MAD_ADDPT_STRUCT_LUT.STRUCTURE_ID',
+    to: 'MAD_STRUCTURES_POLY.STRUCTURE_ID',
+  }])
 })
 
 test('keeps skill instructions out of the default skill index', () => {

@@ -5,6 +5,7 @@ import {
   getProposalAuditInfo,
   getProposalLineage,
   getQaIssueRecords,
+  getQaRecordMapPreview,
   investigateQaIssue,
   openProposalAuditInFileExplorer,
   readAgentEventStream,
@@ -131,6 +132,27 @@ describe('local agent client', () => {
         method: 'POST',
         body: JSON.stringify({ recordId: 'QA-ROW-17' }),
       }),
+    )
+  })
+
+  it('loads one row map preview without starting an agent request', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ kind: 'mad-qa-map-preview', limits: { bufferMeters: 120 } }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(getQaRecordMapPreview('MADV_QA_BRV_NO_BSA', 'BRV-17')).resolves.toEqual({
+      kind: 'mad-qa-map-preview',
+      limits: { bufferMeters: 120 },
+    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/qa/issues/MADV_QA_BRV_NO_BSA/records/BRV-17/map-preview',
+      { signal: undefined },
+    )
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      '/api/qa/issues/MADV_QA_BRV_NO_BSA/investigate-stream',
+      expect.anything(),
     )
   })
 })

@@ -17,6 +17,7 @@ from typing import Any
 
 import geopandas as gpd
 import pandas as pd
+from shapely.ops import unary_union
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -478,6 +479,170 @@ def build_town_extract(town_id: int) -> dict[str, Any]:
     }
 
 
+QA_PREVIEW_BUFFER_METERS = 120
+QA_PREVIEW_LAYER_LIMIT = 50
+QA_PREVIEW_TOTAL_LIMIT = 200
+QA_PREVIEW_LAYERS = {
+    "MADV_QA_ASL_DUPES": ["addresses", "centroids", "structures", "parcels", "roads"],
+}
+
+
+def feature_collection_for_frame(layer_id: str, definition: dict[str, Any], frame: gpd.GeoDataFrame) -> dict[str, Any]:
+    feature_collection: dict[str, Any] = {"type": "FeatureCollection", "features": []}
+    for index, row in frame.iterrows():
+        stable_id = scalar(row.get(definition["id_field"]))
+        if stable_id in (None, "") and definition.get("fallback_id_field"):
+            stable_id = scalar(row.get(definition["fallback_id_field"]))
+        if stable_id in (None, ""):
+            stable_id = f"row-{index}"
+        record_key = f"{layer_id}:{stable_id}"
+        properties = clean_properties(row)
+        properties["__layer"] = layer_id
+        properties["__id"] = str(stable_id)
+        properties["__recordKey"] = record_key
+        feature_collection["features"].append({
+            "type": "Feature",
+            "id": record_key,
+            "properties": properties,
+            "geometry": row.geometry.__geo_interface__,
+        })
+    return feature_collection
+
+
+def build_qa_map_preview(view_id: str, record_id: str) -> dict[str, Any]:
+    if view_id not in QA_PREVIEW_LAYERS:
+        raise ValueError(
+            f"{view_id} does not have local record geometry. Production must resolve its approved QA-to-feature relate first."
+        )
+    cases = find_duplicate_structure_lookups()
+    case_item = next((candidate for candidate in cases if candidate["id"] == record_id), None)
+    if case_item is None:
+        raise ValueError("The selected QA row has no authoritative geometry in the local fixture.")
+
+    address_point_id = str(case_item["records"]["addressPoint"]["id"])
+    structure_id = str(case_item["records"]["structure"]["id"])
+    address_frame = read_frame(SPATIAL_LAYERS["addresses"]["file"])
+    structure_frame = read_frame(SPATIAL_LAYERS["structures"]["file"])
+    if structure_frame.crs != address_frame.crs:
+        structure_frame = structure_frame.to_crs(address_frame.crs)
+    structure_matches = find_row(structure_frame, "STRUCTURE_", structure_id)
+    anchor_geometries = [
+        geometry
+        for geometry in (structure_matches.geometry.tolist() if not structure_matches.empty else [])
+        if geometry is not None and not geometry.is_empty
+    ]
+    if not anchor_geometries:
+        raise ValueError("The approved QA relationship did not resolve STRUCTURE_ID to a structure polygon.")
+
+    anchor_geometry = unary_union(anchor_geometries)
+    preview_area = anchor_geometry.buffer(QA_PREVIEW_BUFFER_METERS)
+    preview_area_wgs84 = gpd.GeoSeries([preview_area], crs=address_frame.crs).to_crs(4326)
+    preview_bounds = [float(value) for value in preview_area_wgs84.total_bounds]
+    layers = []
+    remaining = QA_PREVIEW_TOTAL_LIMIT
+
+    for layer_id in QA_PREVIEW_LAYERS[view_id]:
+        if remaining <= 0:
+            break
+        definition = SPATIAL_LAYERS[layer_id]
+        frame = read_frame(definition["file"])
+        if not isinstance(frame, gpd.GeoDataFrame) or frame.empty:
+            continue
+        if frame.crs != address_frame.crs:
+            frame = frame.to_crs(address_frame.crs)
+        town_field = definition["town_field"]
+        if town_field:
+            frame = frame[frame[town_field] == ROCKPORT_TOWN_ID]
+        frame = frame[frame.geometry.intersects(preview_area)].copy()
+        if frame.empty:
+            continue
+
+        frame["__preview_distance"] = frame.geometry.distance(anchor_geometry.centroid)
+        frame = frame.sort_values("__preview_distance").head(min(QA_PREVIEW_LAYER_LIMIT, remaining))
+        frame = frame.drop(columns=["__preview_distance"])
+        if layer_id in {"structures", "parcels", "roads"}:
+            frame.geometry = frame.geometry.simplify(0.35, preserve_topology=True)
+        frame = frame.to_crs(4326)
+        feature_collection = feature_collection_for_frame(layer_id, definition, frame)
+        count = len(feature_collection["features"])
+        remaining -= count
+        layers.append({
+            "id": layer_id,
+            "label": definition["label"],
+            "count": count,
+            "idField": definition["id_field"],
+            "source": definition["file"],
+            "geojson": feature_collection,
+        })
+
+    record_bundle = build_record_bundle(
+        ROCKPORT_TOWN_ID,
+        f"addresses:{address_point_id}",
+    )
+    preview_case = {
+        **case_item,
+        "status": "preview",
+        "recommendation": "No agent investigation has run. Review the bounded map context first.",
+        "operations": [],
+        "changes": [],
+        "publishEligible": False,
+        "publishBlocker": "A pre-agent map preview cannot be accepted or published.",
+    }
+    relation = {
+        "qaEntity": "MAD_ADDPT_STRUCT_LUT",
+        "anchorEntity": "MAD_STRUCTURES_POLY",
+        "anchorFeatureKeys": [
+            f"structures:{structure_id}",
+        ],
+        "path": [
+            {
+                "from": "MAD_ADDPT_STRUCT_LUT.STRUCTURE_ID",
+                "to": "MAD_STRUCTURES_POLY.STRUCTURE_ID",
+            },
+        ],
+        "description": (
+            "The nonspatial lookup row is mapped through STRUCTURE_ID to its structure polygon. "
+            "The address point remains nearby relational context."
+        ),
+    }
+    extract = {
+        "kind": "mad-qa-map-preview-extract",
+        "town": town_community(ROCKPORT_TOWN_ID),
+        "bounds": preview_bounds,
+        "center": [
+            (preview_bounds[1] + preview_bounds[3]) / 2,
+            (preview_bounds[0] + preview_bounds[2]) / 2,
+        ],
+        "zoom": 18,
+        "layers": layers,
+        "metadata": {
+            "source": "data/MAD_data_rockport",
+            "readOnly": True,
+            "preAgent": True,
+            "bufferMeters": QA_PREVIEW_BUFFER_METERS,
+            "maxFeaturesPerLayer": QA_PREVIEW_LAYER_LIMIT,
+            "maxTotalFeatures": QA_PREVIEW_TOTAL_LIMIT,
+            "loadedFeatureCount": sum(layer["count"] for layer in layers),
+            "relation": relation,
+        },
+    }
+    return {
+        "kind": "mad-qa-map-preview",
+        "viewId": view_id,
+        "recordId": record_id,
+        "caseItem": preview_case,
+        "extract": extract,
+        "records": record_bundle["records"],
+        "selectedFeatureKey": f"structures:{structure_id}",
+        "relation": relation,
+        "limits": {
+            "bufferMeters": QA_PREVIEW_BUFFER_METERS,
+            "maxFeaturesPerLayer": QA_PREVIEW_LAYER_LIMIT,
+            "maxTotalFeatures": QA_PREVIEW_TOTAL_LIMIT,
+        },
+    }
+
+
 def record_shape(key: str, label: str, stable_id: str, row: pd.Series) -> dict[str, Any]:
     properties = clean_properties(row)
     attributes = [
@@ -618,6 +783,10 @@ def main() -> None:
     record.add_argument("--town-id", required=True, type=int)
     record.add_argument("--record-key", required=True)
 
+    preview = subparsers.add_parser("map-preview")
+    preview.add_argument("--view-id", required=True)
+    preview.add_argument("--record-id", required=True)
+
     args = parser.parse_args()
     try:
         if args.command == "investigate":
@@ -641,6 +810,8 @@ def main() -> None:
                 }
         elif args.command == "town-extract":
             result = build_town_extract(args.town_id)
+        elif args.command == "map-preview":
+            result = build_qa_map_preview(args.view_id, args.record_id)
         else:
             result = build_record_bundle(args.town_id, args.record_key)
         print(json.dumps({"ok": True, "result": result}, separators=(",", ":"), default=str))

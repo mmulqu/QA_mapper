@@ -1,3 +1,5 @@
+import { buildQaMapPreviewDescriptor } from './qa-map-relations.mjs'
+
 const DEFAULT_PREVIEW_SIZE = 12
 export const QA_SELECTION_LIMIT = 10
 
@@ -40,6 +42,7 @@ function recordFromCase(issue, caseItem, index) {
     sourceLabel: 'Rockport MAD extract',
     mock: false,
     runnable: true,
+    mapPreview: buildQaMapPreviewDescriptor(issue, caseItem),
     attributes: {
       QA_ROW_ID: caseItem.id,
       QA_VIEW: issue.id,
@@ -68,6 +71,7 @@ function mockRecord(issue, row, index) {
     sourceLabel: 'Mock QA view row',
     mock: true,
     runnable: true,
+    mapPreview: buildQaMapPreviewDescriptor(issue, null, { mock: true }),
     attributes: {
       QA_ROW_ID: id,
       QA_VIEW: issue.id,

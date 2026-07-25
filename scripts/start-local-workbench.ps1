@@ -41,6 +41,59 @@ function Test-PortListener {
   return [bool](Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1)
 }
 
+function Get-AgentSourceVersion {
+  $sourceRoots = @(
+    (Join-Path $projectRoot 'scripts'),
+    (Join-Path $projectRoot 'agent-skills'),
+    (Join-Path $projectRoot 'src\data'),
+    (Join-Path $projectRoot 'src\lib'),
+    (Join-Path $projectRoot 'data')
+  )
+  $sourceFiles = $sourceRoots |
+    Where-Object { Test-Path -LiteralPath $_ } |
+    ForEach-Object { Get-ChildItem -LiteralPath $_ -Recurse -File } |
+    Sort-Object FullName
+  $manifest = $sourceFiles | ForEach-Object {
+    $relativePath = $_.FullName.Substring($projectRoot.Length).TrimStart('\')
+    "$relativePath|$($_.Length)|$($_.LastWriteTimeUtc.Ticks)"
+  }
+  $sha256 = [Security.Cryptography.SHA256]::Create()
+  try {
+    $bytes = [Text.Encoding]::UTF8.GetBytes(($manifest -join "`n"))
+    return ([BitConverter]::ToString($sha256.ComputeHash($bytes))).Replace('-', '').Substring(0, 16).ToLowerInvariant()
+  } finally {
+    $sha256.Dispose()
+  }
+}
+
+function Get-AgentBridgeHealth {
+  try {
+    return Invoke-RestMethod -Uri "http://127.0.0.1:$agentPort/api/health" -TimeoutSec 3
+  } catch {
+    return $null
+  }
+}
+
+function Stop-StaleAgentBridge {
+  $listeners = @(Get-NetTCPConnection -LocalPort $agentPort -State Listen -ErrorAction SilentlyContinue)
+  foreach ($listener in $listeners) {
+    $process = Get-CimInstance Win32_Process -Filter "ProcessId = $($listener.OwningProcess)"
+    $commandLine = [string]$process.CommandLine
+    if ($process.Name -ne 'node.exe' -or $commandLine -notmatch 'scripts[\\/]agent-server\.mjs') {
+      throw "Port $agentPort is occupied by another application (PID $($listener.OwningProcess)). Close it before starting the MAD QA Workbench."
+    }
+    Write-Host 'Refreshing the local MAD agent bridge...'
+    Stop-Process -Id $listener.OwningProcess -Force
+  }
+
+  $deadline = (Get-Date).AddSeconds(10)
+  while ((Get-Date) -lt $deadline) {
+    if (-not (Test-PortListener -Port $agentPort)) { return }
+    Start-Sleep -Milliseconds 150
+  }
+  throw "The previous MAD agent bridge did not release port $agentPort."
+}
+
 try {
   $node = Get-Command node.exe -ErrorAction Stop
   $npm = Get-Command npm.cmd -ErrorAction Stop
@@ -68,6 +121,16 @@ try {
   }
 
   $env:LM_STUDIO_MODEL = $Model
+  $agentSourceVersion = Get-AgentSourceVersion
+  $env:MAD_AGENT_SOURCE_VERSION = $agentSourceVersion
+  $agentHealth = Get-AgentBridgeHealth
+  $agentBridgeCurrent = $agentHealth -and
+    $agentHealth.serviceId -eq 'mad-qa-agent-bridge' -and
+    $agentHealth.sourceVersion -eq $agentSourceVersion -and
+    $agentHealth.model -eq $Model
+  if ((Test-PortListener -Port $agentPort) -and -not $agentBridgeCurrent) {
+    Stop-StaleAgentBridge
+  }
   if (-not (Test-PortListener -Port $agentPort)) {
     Write-Host 'Starting the local MAD agent bridge...'
     Start-Process -FilePath $node.Source -ArgumentList @('scripts/agent-server.mjs') -WorkingDirectory $projectRoot -WindowStyle Hidden | Out-Null

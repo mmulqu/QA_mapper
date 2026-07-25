@@ -59,6 +59,16 @@ export async function getQaIssueRecords(viewId, { signal } = {}) {
   return payload
 }
 
+export async function getQaRecordMapPreview(viewId, recordId, { signal } = {}) {
+  const response = await fetch(
+    `/api/qa/issues/${encodeURIComponent(viewId)}/records/${encodeURIComponent(recordId)}/map-preview`,
+    { signal },
+  )
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || 'The QA row map preview could not be loaded.')
+  return payload
+}
+
 function parseEventBlock(block) {
   let event = 'message'
   const data = []

@@ -97,6 +97,7 @@ const dynamicCases = new Map()
 const townExtractCache = new Map()
 const townRecordCache = new Map()
 const qaIssueRecordCache = new Map()
+const qaMapPreviewCache = new Map()
 const MAX_PROPOSAL_CONTEXTS = 200
 
 function compactText(value, maxLength) {
@@ -563,6 +564,38 @@ async function loadQaIssueContext(viewId) {
 export async function getQaIssueRecordPage(viewId) {
   const { page } = await loadQaIssueContext(viewId)
   return page
+}
+
+export async function getQaRecordMapPreview(viewId, recordId) {
+  const context = await loadQaIssueContext(viewId)
+  const selectedRow = context.page.rows.find((row) => row.id === recordId)
+  if (!selectedRow) {
+    throw new Error('The selected QA row is not in the current bounded preview.')
+  }
+  if (selectedRow.mapPreview?.status !== 'available') {
+    throw new Error(selectedRow.mapPreview?.reason || 'This QA row does not have previewable geometry.')
+  }
+
+  const cacheKey = `${context.issue.id}:${selectedRow.id}`
+  if (!qaMapPreviewCache.has(cacheKey)) {
+    qaMapPreviewCache.set(
+      cacheKey,
+      runMadFixtureAdapter('map-preview', [
+        '--view-id', context.issue.id,
+        '--record-id', selectedRow.id,
+      ])
+        .then((preview) => ({
+          ...preview,
+          row: selectedRow,
+          descriptor: selectedRow.mapPreview,
+        }))
+        .catch((error) => {
+          qaMapPreviewCache.delete(cacheKey)
+          throw error
+        }),
+    )
+  }
+  return qaMapPreviewCache.get(cacheKey)
 }
 
 async function prepareQaInvestigation(viewId, selectedRecordId = null) {
@@ -1924,7 +1957,15 @@ async function health(baseUrl, model) {
   const response = await fetch(`${baseUrl}/models`)
   const payload = await response.json().catch(() => ({ data: [] }))
   const models = payload.data?.map((item) => item.id) ?? []
-  return { provider: 'LM Studio', baseUrl, model, available: response.ok && models.includes(model), models }
+  return {
+    serviceId: 'mad-qa-agent-bridge',
+    sourceVersion: process.env.MAD_AGENT_SOURCE_VERSION || 'unversioned',
+    provider: 'LM Studio',
+    baseUrl,
+    model,
+    available: response.ok && models.includes(model),
+    models,
+  }
 }
 
 function qaInvestigationPrompt(prepared) {
@@ -2046,6 +2087,20 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
         && pathParts[2] === 'issues'
         && pathParts[3]
         && pathParts[4] === 'records'
+        && pathParts[5]
+        && pathParts[6] === 'map-preview'
+      ) {
+        return sendJson(response, 200, await getQaRecordMapPreview(pathParts[3], pathParts[5]))
+      }
+
+      if (
+        request.method === 'GET'
+        && pathParts[0] === 'api'
+        && pathParts[1] === 'qa'
+        && pathParts[2] === 'issues'
+        && pathParts[3]
+        && pathParts[4] === 'records'
+        && !pathParts[5]
       ) {
         return sendJson(response, 200, await getQaIssueRecordPage(pathParts[3]))
       }

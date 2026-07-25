@@ -12,12 +12,17 @@ vi.mock('./components/MapWorkspace', () => ({
     onSelectFeature,
     onShowAgent,
     onShowDiff,
+    onBackToQaRows,
+    onRunQaPreview,
     publicSnapshot,
+    qaPreview,
     townExtract,
   }) => (
     <section data-testid="map-workspace">
       {townExtract
-        ? `Town extract workspace for ${caseItem.municipality}`
+        ? qaPreview
+          ? `Pre-agent map preview for ${caseItem.municipality}`
+          : `Town extract workspace for ${caseItem.municipality}`
         : publicSnapshot
           ? 'Public MAD workspace for Brookline'
           : `Leaflet workspace for ${caseItem.address}`}
@@ -73,8 +78,19 @@ vi.mock('./components/MapWorkspace', () => ({
         </>
       )}
       {!publicSnapshot && <button type="button" onClick={() => onSelectFeature('structure')}>Open structure</button>}
-      {!publicSnapshot && <button type="button" onClick={onShowDiff}>Show agent diff</button>}
-      {!publicSnapshot && <button type="button" onClick={onShowAgent}>Open local agent</button>}
+      {qaPreview ? (
+        <>
+          <span>Mapped before agent run</span>
+          <span>{qaPreview.relation.description}</span>
+          <button type="button" onClick={onBackToQaRows}>Back to rows</button>
+          <button type="button" onClick={onRunQaPreview}>Run agent on this issue</button>
+        </>
+      ) : (
+        <>
+          {!publicSnapshot && <button type="button" onClick={onShowDiff}>Show agent diff</button>}
+          {!publicSnapshot && <button type="button" onClick={onShowAgent}>Open local agent</button>}
+        </>
+      )}
     </section>
   ),
 }))
@@ -170,6 +186,13 @@ const qaRecordPage = {
       severity: 'Review',
       sourceLabel: 'Rockport MAD extract',
       mock: false,
+      mapPreview: {
+        status: 'available',
+        relation: {
+          anchorLabel: 'structure polygon',
+          description: 'The nonspatial lookup row is mapped through STRUCTURE_ID to its structure polygon.',
+        },
+      },
     },
     {
       id: 'MADV_QA_ASL_DUPES-MOCK-0002',
@@ -182,6 +205,11 @@ const qaRecordPage = {
       severity: 'Medium',
       sourceLabel: 'Mock QA view row',
       mock: true,
+      mapPreview: {
+        status: 'awaiting-record-geometry',
+        reason: 'This mock row has no authoritative relationship keys or geometry.',
+        relation: { anchorLabel: 'structure polygon' },
+      },
     },
   ],
 }
@@ -216,6 +244,84 @@ describe('MAD QA feature explorer', () => {
     expect(screen.getByRole('heading', { name: 'Select a non-zero QA check' })).toBeInTheDocument()
     expect(screen.getByText('Structure lookup records that are functionally duplicative')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Attributes' })).not.toBeInTheDocument()
+  })
+
+  it('previews a bounded related-feature map before starting the agent', async () => {
+    const mapPreviewUrl = `/api/qa/issues/MADV_QA_ASL_DUPES/records/${rockportQaCase.id}/map-preview`
+    vi.stubGlobal('fetch', vi.fn((url) => {
+      if (url === '/api/qa/issues') return Promise.resolve({ ok: true, json: async () => qaCatalog })
+      if (url === '/test-data/brookline-mad-snapshot.json') return Promise.resolve({ ok: false, json: async () => ({}) })
+      if (url === '/api/qa/issues/MADV_QA_ASL_DUPES/records') {
+        return Promise.resolve({ ok: true, json: async () => qaRecordPage })
+      }
+      if (url === mapPreviewUrl) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            kind: 'mad-qa-map-preview',
+            caseItem: {
+              ...rockportQaCase,
+              status: 'preview',
+              operations: [],
+              changes: [],
+            },
+            extract: {
+              kind: 'mad-qa-map-preview-extract',
+              town: { name: 'Rockport', addressTownId: 252, communityIds: [270] },
+              bounds: [-70.6156, 42.6502, -70.6123, 42.6528],
+              center: [42.6515, -70.614],
+              zoom: 18,
+              layers: [],
+              metadata: { readOnly: true, preAgent: true, loadedFeatureCount: 38 },
+            },
+            records: {
+              'addresses:M_272655_933812': {
+                key: 'addresses:M_272655_933812',
+                label: 'Address point',
+                id: 'M_272655_933812',
+                attributes: [{ field: 'ADDRESS_POINT_ID', value: 'M_272655_933812' }],
+                related: ['structure-lookup:duplicate'],
+              },
+              'structure-lookup:duplicate': {
+                key: 'structure-lookup:duplicate',
+                label: 'Structure lookup',
+                id: 'duplicate',
+                attributes: [{ field: 'STRUCTURE_ID', value: '272643_933827' }],
+                related: ['addresses:M_272655_933812'],
+              },
+            },
+            selectedFeatureKey: 'structures:272643_933827',
+            relation: {
+              anchorFeatureKeys: ['structures:272643_933827'],
+              description: 'The nonspatial lookup row is mapped through STRUCTURE_ID to its structure polygon.',
+            },
+            limits: { bufferMeters: 120, maxFeaturesPerLayer: 50, maxTotalFeatures: 200 },
+          }),
+        })
+      }
+      return Promise.resolve({ ok: false, json: async () => ({}) })
+    }))
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: /Structure lookup records that are functionally duplicative/ }))
+    await user.click(await screen.findByRole('button', { name: 'Preview map for 8 Alpaca Court, Rockport' }))
+
+    expect(await screen.findByText('Pre-agent map preview for Rockport')).toBeInTheDocument()
+    expect(screen.getByText('Mapped before agent run')).toBeInTheDocument()
+    expect(screen.getByText(/mapped through STRUCTURE_ID to its structure polygon/)).toBeInTheDocument()
+    expect(screen.getByText('Highlighted feature: structures:272643_933827')).toBeInTheDocument()
+    expect(globalThis.fetch).toHaveBeenCalledWith(mapPreviewUrl, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(globalThis.fetch).not.toHaveBeenCalledWith(
+      '/api/qa/issues/MADV_QA_ASL_DUPES/investigate-stream',
+      expect.anything(),
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open town address point' }))
+    expect(await screen.findByText('ADDRESS_POINT_ID')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Close attributes' }))
+    await user.click(screen.getByRole('button', { name: 'Back to rows' }))
+    expect(await screen.findByRole('button', { name: 'Run selected' })).toBeDisabled()
   })
 
   it('shows the local proposal audit path and opens it through the protected bridge action', async () => {
