@@ -127,6 +127,7 @@ Codex can already read and change local files in this workspace, including synth
 - [x] Stream automatic category investigations over a localhost event channel; normalize common LM Studio reasoning/content formats without tying the UI to one model ID.
 - [x] Give vision-capable local models a controlled `capture_map_evidence` tool; exact coordinates remain vector-derived while the snapshot supplies basemap or orthoimage interpretation.
 - [x] Add a case-scoped vector geospatial operator: the agent lists available local features, explicitly selects its subject and comparison features, and runs intersection, containment, or distance evidence without arbitrary GIS access. Point-to-structure lookup drafts require a successful intersection check.
+- [x] Add case-scoped QA decision evidence: an exact rule trace, bounded relationship closure, and server-ranked address-point or structure candidate comparison. QA drafts are withheld until the required evidence is read.
 - [ ] Replace fixture-draft staging with `stage_draft_operation` against the resettable relational Gate 1 sandbox.
 - [ ] Exercise each initial skill as Codex against resettable fixtures.
 - [ ] Record every tool call, proposed operation, validator result, and human decision in the test audit trail.

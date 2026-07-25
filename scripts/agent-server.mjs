@@ -17,6 +17,11 @@ import {
   runCaseGeospatialOperator,
 } from './case-geospatial.mjs'
 import {
+  buildQaRuleTrace,
+  compareCaseCandidates,
+  getCaseRelationshipClosure,
+} from './qa-decision-tools.mjs'
+import {
   appendReviewerSkillMemory,
   getSkillMemoryTarget,
   QA_CATEGORY_SKILLS,
@@ -1099,6 +1104,49 @@ function agentTools(caseItem = null) {
     {
       type: 'function',
       function: {
+        name: 'get_qa_rule_trace',
+        description: 'Read the exact case-scoped QA predicate, observed field values, expected relationship route, and trace limitation. This produces evidence only; it never edits MAD.',
+        parameters: { type: 'object', properties: {}, additionalProperties: false },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_relationship_closure',
+        description: 'Read the bounded relational closure around one case feature: related address, variant, lookup, structure, parcel, and road records with cardinalities. This never searches statewide or edits MAD.',
+        parameters: {
+          type: 'object',
+          properties: {
+            anchor_feature_key: {
+              type: 'string',
+              enum: ['address-point', 'master-address', 'address-variant', 'structure', 'structure-lookup', 'parcel', 'road'],
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'compare_case_candidates',
+        description: 'Rank the bounded case candidates for a proposed relationship using verified relational and vector evidence. Use it when a QA issue has a competing address point or structure. This is evidence-producing, not an edit operation.',
+        parameters: {
+          type: 'object',
+          properties: {
+            candidate_type: {
+              type: 'string',
+              enum: ['address-point', 'structure'],
+            },
+          },
+          required: ['candidate_type'],
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
         name: 'massgis_search_layers',
         description: 'Search the allow-listed public MassGIS GeoServer layer catalog. Use only for scoped external evidence after loading MassGIS GeoServer.',
         parameters: {
@@ -1335,6 +1383,9 @@ function agentTools(caseItem = null) {
     'get_town_extract_summary',
     'get_qa_investigation_packet',
     'get_mad_schema_context',
+    'get_qa_rule_trace',
+    'get_relationship_closure',
+    'compare_case_candidates',
     'get_proposal_lineage',
     'list_case_geometries',
     'run_case_geospatial_operator',
@@ -1355,6 +1406,26 @@ function hasAddressStructureIntersection(session) {
     result.operation === 'intersects'
     && result.subject?.key === 'address-point'
     && result.comparisons?.some((comparison) => comparison.feature?.key === 'structure' && comparison.matches)
+  ))
+}
+
+function requiresQaDecisionEvidence(caseItem) {
+  return Boolean(caseItem.qaEvidence?.viewId)
+}
+
+function requiredCandidateType(caseItem) {
+  if (caseItem.qaEvidence?.viewId === 'MADV_QA_AV_APID_MISMATCH') return 'address-point'
+  if (requiresAddressStructureIntersection(caseItem)) return 'structure'
+  return null
+}
+
+function hasRequiredCandidateComparison(caseItem, session) {
+  const requiredType = requiredCandidateType(caseItem)
+  if (!requiredType) return true
+  return session.candidateComparisons.some((comparison) => (
+    comparison.candidateType === requiredType
+    && comparison.recommendedCandidate
+    && !comparison.recommendedCandidate.rejected
   ))
 }
 
@@ -1438,6 +1509,21 @@ async function executeTool(call, caseItem, model, session, signal) {
         },
         schema: readMadSchemaContext(args.schema_subject),
       }
+    case 'get_qa_rule_trace': {
+      const result = buildQaRuleTrace(caseItem)
+      session.ruleTraces.push(result)
+      return result
+    }
+    case 'get_relationship_closure': {
+      const result = getCaseRelationshipClosure(caseItem, args)
+      session.relationshipClosures.push(result)
+      return result
+    }
+    case 'compare_case_candidates': {
+      const result = compareCaseCandidates(caseItem, args)
+      session.candidateComparisons.push(result)
+      return result
+    }
     case 'get_proposal_lineage':
       return { proposals: getProposalLineage(caseItem.id) }
     case 'get_feature':
@@ -1471,6 +1557,18 @@ async function executeTool(call, caseItem, model, session, signal) {
     case 'stage_fixture_draft': {
       if (caseItem.status !== 'ready' || !caseItem.changes?.length) {
         return { staged: false, reason: 'This case is held for evidence. No draft was staged.' }
+      }
+      if (requiresQaDecisionEvidence(caseItem) && (!session.ruleTraces.length || !session.relationshipClosures.length)) {
+        return {
+          staged: false,
+          reason: 'Before staging this QA fix, read both the QA rule trace and the bounded relationship closure. A case summary alone is not sufficient evidence.',
+        }
+      }
+      if (!hasRequiredCandidateComparison(caseItem, session)) {
+        return {
+          staged: false,
+          reason: `Before staging this QA fix, rank the bounded ${requiredCandidateType(caseItem)} candidates and confirm the non-rejected recommendation.`,
+        }
       }
       if (requiresAddressStructureIntersection(caseItem) && !hasAddressStructureIntersection(session)) {
         return {
@@ -1527,6 +1625,13 @@ function toolSummary(name, result) {
   }
   if (name === 'get_qa_investigation_packet') return `Read combined QA evidence and ${result.town.town || 'no'} town context`
   if (name === 'get_mad_schema_context') return `Read MAD schema context: ${result.subject}`
+  if (name === 'get_qa_rule_trace') return `Read QA rule trace for ${result.viewId}`
+  if (name === 'get_relationship_closure') return `Read relationship closure from ${result.anchor.key}`
+  if (name === 'compare_case_candidates') {
+    return result.recommendedCandidate
+      ? `Ranked ${result.candidates.length} ${result.candidateType} candidates; top: ${result.recommendedCandidate.id}`
+      : `No supported ${result.candidateType} candidate was found`
+  }
   if (name === 'massgis_search_layers') return `Searched MassGIS layers for ${result.query}`
   if (name === 'massgis_describe_layer') return `Read MassGIS layer schema: ${result.layer_id}`
   if (name === 'massgis_find_in_town') return `Read ${result.feature_count} MassGIS features in ${result.municipality}`
@@ -1653,6 +1758,7 @@ function agentInstructions(caseItem) {
     'Use the case tools before making factual claims. Keep answers concise and cite the data source by name when available.',
     'You may stage only the controlled training draft using stage_fixture_draft. It never edits MAD, never publishes, and always requires human review.',
     'For a selected statewide QA category, you must read get_qa_investigation_packet, or both get_qa_issue_evidence and get_town_extract_summary, before returning a final answer. Explain the statewide count separately from the issue records reproduced in the local town extract.',
+    'Before staging a QA-category draft, read get_qa_rule_trace and get_relationship_closure. When the case has competing address-point or structure candidates, call compare_case_candidates for the relevant type and use its server-ranked recommendation; do not invent a ranking or override it without contrary tool evidence.',
     'Resolve the town only from the supplied field evidence and MAD_MSAG_COMMUNITY_POLYM lookup. Depending on the source layer, the evidence may use COMMUNITY_ID, ADDRESS_TOWN_ID, or GEOGRAPHIC_TOWN_ID.',
     'When staging a draft, provide a concise human-readable summary and category in the tool call; they become the proposal registry entry.',
     'If case status is evidence, withhold any edit draft and explain what evidence is missing.',
@@ -2055,7 +2161,14 @@ export async function runCaseAgent({ caseItem, prompt, baseUrl, model, onEvent, 
   const proposalTranscript = []
   const stagedProposalIds = new Set()
   const tools = agentTools(caseItem)
-  const session = { loadedSkills: new Set(), describedLayers: new Set(), spatialResults: [] }
+  const session = {
+    loadedSkills: new Set(),
+    describedLayers: new Set(),
+    spatialResults: [],
+    ruleTraces: [],
+    relationshipClosures: [],
+    candidateComparisons: [],
+  }
 
   for (let turn = 0; turn < MAX_AGENT_TURNS; turn += 1) {
     if (signal?.aborted) throw new DOMException('The agent stream was cancelled.', 'AbortError')
@@ -2247,6 +2360,8 @@ function qaInvestigationPrompt(prepared) {
     `The selected row source is ${prepared.selectedRow.sourceLabel}${prepared.selectedRow.mock ? ' and is explicitly non-authoritative mock data' : ''}.`,
     skillDirection,
     'After loading the named skill, call get_qa_investigation_packet with the relationship subject that fits this view. It returns the case, record evidence, approved relationship context, and town selection together.',
+    'Then call get_qa_rule_trace and get_relationship_closure with the anchor that fits the issue. Use their exact observed values and relationship path in your conclusion; do not substitute a generic description of the QA rule.',
+    'For an Address Variant point-link mismatch, call compare_case_candidates with address-point before staging. For a missing address-point structure lookup, call it with structure before staging. Treat its ranked recommendation as server-verified evidence, not a model guess.',
     'When the conclusion depends on a point, structure, parcel, or road spatial relationship, call list_case_geometries and then run_case_geospatial_operator with the relevant returned feature keys before staging. Quote the selected keys and computed result in the final explanation.',
     'If the proposed conclusion depends on point placement, structure association, or a road segment and the selected row has case geometry, call capture_map_evidence on the relevant feature with massgis-2025-imagery before staging. Use massgis-basemap instead when cartographic context is more useful than imagery.',
     'If the local evidence confirms the controlled logical correction, stage it for human review and validate it.',
