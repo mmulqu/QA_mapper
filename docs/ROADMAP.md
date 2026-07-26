@@ -1,6 +1,6 @@
 # MAD QA Workbench roadmap
 
-Last updated: 2026-07-25
+Last updated: 2026-07-26
 
 This is the running implementation record for the workbench. Check off a gate only when the listed acceptance test is demonstrably true; a production MAD edit never originates in the browser.
 
@@ -21,11 +21,13 @@ This is the running implementation record for the workbench. Check off a gate on
 - [x] Case-scoped agent map-evidence tool that fits and highlights an address point, structure, or road segment over either MassGIS background, saves an auditable PNG, and attaches it to vision-capable LM Studio models through a model-name-agnostic message contract.
 - [x] Parse the supplied daily QA report into data-category buckets and show only non-zero checks.
 - [x] Preview record-level rows for a selected QA category, label mock versus fixture evidence, and run or queue only a reviewer-selected batch of up to 50 rows.
+- [x] Allow reviewers to attach bounded, per-record context before an immediate or queued investigation; persist the note with its queue item and treat it as untrusted, evidence-verification guidance for the local agent.
 - [x] Let reviewers open an issue row on the map before running the agent, using direct issue geometry or an explicit category-to-feature relationship and a bounded AOI extract.
 - [x] Process selected rows sequentially with a visible Stop action that aborts the active LM Studio stream and leaves remaining rows unrun.
 - [x] Persist background QA batches in `.runtime\qa-batch-jobs.json`, process one local-model request at a time outside the browser request lifecycle, and recover an interrupted item after a bridge restart.
 - [x] Provide a live batch dashboard with progress, current activity, pause-after-current, resume, and cancel controls.
 - [x] Provide a review inbox that receives ready, withheld, failed, accepted, and rejected results while later batch items continue processing.
+- [x] Add a map-first QA Issue Atlas on the start page: versioned GeoJSON, lazy-loaded Leaflet rendering, red point/line/polygon evidence layers, click-to-review, exact-record queue handoff, and authoritative refresh-after-publish semantics.
 - [x] Run a selected QA row through the local agent, resolve its issue town through MAD community/town identifiers, and load that town's read-only vector extract.
 - [x] Reproduce the Rockport `MADV_QA_ASL_DUPES` issue at 8 Alpaca Court and stage its controlled review-only duplicate-row proposal.
 - [x] Add six reversible Rockport fault-injection scenarios across MA, AP, AV, ASL, and BRV, with immutable source data, known evaluation answers, bounded map previews, and category-memory retry support.
@@ -88,8 +90,10 @@ The public point export is valuable for browser/display and metadata testing, bu
 - [x] Add a review inbox that can reopen a completed queued result in the existing town-map, evidence, and red/green diff workflow.
 - [x] Define geometry-resolution contracts for all current QA data categories, including `BASE_RANGE_VARIANT.BASE_SEGMENT_ID → BASE_STREET_ARC.BASE_SEGMENT_ID` for BRV issues.
 - [x] Add a pre-agent map-preview endpoint for the local Rockport ASL fixture with a 120-meter AOI, five relevant layers, and hard limits of 50 features per layer and 200 total.
+- [x] Build the current seven extract-backed Rockport QA cases into a compact local GeoJSON atlas and expose a protected pipeline refresh action.
 - [ ] Replace the 50-row mock preview with server-side paging, filtering, assignment, and stable row IDs from the approved SQL view.
 - [ ] Populate each production QA row with direct geometry or the stable relationship keys required by its category's geometry-resolution contract.
+- [ ] Replace the Rockport atlas provider with the live QA SQL provider; log unmapped rows, source watermark, build duration, archive size, and category counts for every refresh.
 - [ ] Replace the report-file parser and single-view local adapter with the approved QA SQL view connection.
 
 **Acceptance test:** A new QA SQL result appears as one deduplicated case, opens with its affected features and evidence, and retains its original QA-result link.

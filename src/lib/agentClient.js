@@ -52,6 +52,24 @@ export async function getQaIssueCatalog() {
   return payload
 }
 
+export async function getQaIssueAtlas({ signal } = {}) {
+  const response = await fetch('/api/qa/atlas', { signal })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || 'The QA issue map could not be loaded.')
+  return payload
+}
+
+export async function refreshQaIssueAtlas({ signal } = {}) {
+  const response = await fetch('/api/qa/atlas/refresh', {
+    method: 'POST',
+    headers: { 'x-mad-local-action': 'refresh-qa-atlas' },
+    signal,
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || 'The QA issue map could not be refreshed.')
+  return payload
+}
+
 export async function getQaIssueRecords(viewId, { signal } = {}) {
   const response = await fetch(`/api/qa/issues/${encodeURIComponent(viewId)}/records`, { signal })
   const payload = await response.json().catch(() => ({}))
@@ -66,11 +84,11 @@ export async function getQaBatchDashboard({ signal } = {}) {
   return payload
 }
 
-export async function createQaBatch(viewId, recordIds) {
+export async function createQaBatch(viewId, recordIds, recordPrompts = {}) {
   const response = await fetch('/api/qa/batches', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ viewId, recordIds }),
+    body: JSON.stringify({ viewId, recordIds, recordPrompts }),
   })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.error || 'The selected QA rows could not be queued.')
@@ -85,6 +103,31 @@ export async function controlQaBatch(jobId, action) {
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.error || 'The QA batch action could not be completed.')
   return payload
+}
+
+export async function getQaBatchJob(jobId, { signal } = {}) {
+  const response = await fetch(`/api/qa/batches/${encodeURIComponent(jobId)}`, { signal })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || 'The queued QA batch could not be opened.')
+  return payload.job
+}
+
+export function streamQaBatchJob(jobId, { onSnapshot, onActivity, onState, onComplete, onError } = {}) {
+  if (typeof EventSource !== 'function') return () => {}
+  const stream = new EventSource(`/api/qa/batches/${encodeURIComponent(jobId)}/stream`)
+  const read = (handler) => (event) => {
+    try {
+      handler?.(JSON.parse(event.data))
+    } catch {
+      // Ignore malformed stream events; the persistent queue remains the source of truth.
+    }
+  }
+  stream.addEventListener('snapshot', read(onSnapshot))
+  stream.addEventListener('activity', read(onActivity))
+  stream.addEventListener('state', read(onState))
+  stream.addEventListener('complete', read(onComplete))
+  stream.onerror = () => onError?.('The live batch stream disconnected. The queue will continue in the background.')
+  return () => stream.close()
 }
 
 export async function getQaBatchItem(itemId, { signal } = {}) {
@@ -148,11 +191,11 @@ export async function readAgentEventStream(response, onActivity) {
   return result
 }
 
-export async function investigateQaIssue(viewId, { recordId, onActivity, signal } = {}) {
+export async function investigateQaIssue(viewId, { recordId, reviewerContext = '', onActivity, signal } = {}) {
   const response = await fetch(`/api/qa/issues/${encodeURIComponent(viewId)}/investigate-stream`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
-    body: JSON.stringify({ recordId }),
+    body: JSON.stringify({ recordId, reviewerContext }),
     signal,
   })
   if (!response.ok) {

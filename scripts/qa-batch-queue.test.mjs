@@ -36,12 +36,14 @@ test('persists a background batch and processes records sequentially into the re
   const storagePath = resolve(directory, 'qa-batch-jobs.json')
   let active = 0
   let maximumActive = 0
+  const receivedContexts = []
   const queue = new QaBatchQueue({
     storagePath,
     model: 'test-qwen',
-    investigate: async ({ recordId, onEvent }) => {
+    investigate: async ({ recordId, reviewerContext, onEvent }) => {
       active += 1
       maximumActive = Math.max(maximumActive, active)
+      receivedContexts.push({ recordId, reviewerContext })
       onEvent({ type: 'tool', phase: 'completed', title: 'Read QA evidence', detail: recordId })
       await new Promise((resolveWait) => setTimeout(resolveWait, 15))
       active -= 1
@@ -63,6 +65,7 @@ test('persists a background batch and processes records sequentially into the re
       viewId: 'MADV_QA_AP_DOM_PTTYPE',
       issue: { id: 'MADV_QA_AP_DOM_PTTYPE', description: 'Invalid point type' },
       records: [record('ROW-1', '10 Railroad Avenue'), record('ROW-2', '12 Railroad Avenue')],
+      recordPrompts: { 'ROW-1': 'Check the municipal source note before staging.' },
     })
     await waitFor(() => queue.dashboard().jobs[0]?.status === 'completed')
 
@@ -74,6 +77,11 @@ test('persists a background batch and processes records sequentially into the re
     assert.equal(dashboard.inbox.counts.ready, 1)
     assert.equal(dashboard.inbox.counts.withheld, 1)
     assert.equal(queue.getItem(`${job.id}-001`).result.draft.id, 'PROPOSAL-1')
+    assert.equal(queue.getItem(`${job.id}-001`).reviewerContext, 'Check the municipal source note before staging.')
+    assert.deepEqual(receivedContexts, [
+      { recordId: 'ROW-1', reviewerContext: 'Check the municipal source note before staging.' },
+      { recordId: 'ROW-2', reviewerContext: '' },
+    ])
     assert.equal(JSON.parse(readFileSync(storagePath, 'utf8')).jobs[0].status, 'completed')
   } finally {
     queue.dispose()
@@ -139,6 +147,46 @@ test('reloads interrupted work as queued and preserves completed results', () =>
       queue.dispose()
     }
   } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('keeps a bounded live transcript and notifies a batch stream subscriber', async () => {
+  const directory = mkdtempSync(resolve(tmpdir(), 'mad-qa-batch-stream-'))
+  const storagePath = resolve(directory, 'qa-batch-jobs.json')
+  let releaseInvestigation
+  const queue = new QaBatchQueue({
+    storagePath,
+    model: 'test-qwen',
+    investigate: ({ onEvent }) => new Promise((resolveInvestigation) => {
+      releaseInvestigation = () => {
+        onEvent({ id: 'reasoning-1', type: 'reasoning_delta', turn: 1, text: 'Checked ' })
+        onEvent({ id: 'reasoning-1', type: 'reasoning_delta', turn: 1, text: 'the relationship.' })
+        onEvent({ id: 'skill-1', type: 'skill', phase: 'completed', name: 'load_skill', title: 'Skill loaded on demand' })
+        resolveInvestigation({ caseItem: { id: 'CASE-1', recommendation: 'Reviewed.' }, draft: null })
+      }
+    }),
+  })
+
+  try {
+    const job = queue.create({
+      viewId: 'MADV_QA_AP_NO_STRUCT_LUT',
+      issue: { id: 'MADV_QA_AP_NO_STRUCT_LUT', description: 'Missing structure lookup' },
+      records: [record('ROW-1', '10 Railroad Avenue')],
+    })
+    const events = []
+    const unsubscribe = queue.subscribe(job.id, (event) => events.push(event))
+    await waitFor(() => queue.dashboard().jobs[0]?.status === 'running')
+    releaseInvestigation()
+    await waitFor(() => queue.dashboard().jobs[0]?.status === 'completed')
+    unsubscribe()
+
+    const savedItem = queue.getJob(job.id).items[0]
+    assert.equal(savedItem.transcript.find((event) => event.id === 'reasoning-1')?.text, 'Checked the relationship.')
+    assert.ok(events.some((event) => event.type === 'activity' && event.event.type === 'reasoning_delta'))
+    assert.ok(events.some((event) => event.type === 'complete'))
+  } finally {
+    queue.dispose()
     rmSync(directory, { recursive: true, force: true })
   }
 })

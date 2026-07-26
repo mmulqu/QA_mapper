@@ -24,6 +24,8 @@ The current app focuses on the geometry-and-record inspection loop without conne
 
 The easiest local start is to double-click **Start MAD QA Workbench.cmd** in this folder. It starts LM Studio when needed, loads the configured local model, starts the agent bridge and app, then opens the workbench in your browser.
 
+For a new-machine install assisted by an LLM or coding agent, use [docs/AGENT_INSTALLATION_GUIDE.md](docs/AGENT_INSTALLATION_GUIDE.md). It covers dependency discovery, one-environment Python setup, LM Studio/model preparation, startup, verification, and recovery from common Windows failures.
+
 Proposal events are recorded in `.runtime\proposal-history.csv`. The left-panel **Proposal audit CSV** control shows this path and, on Windows, opens the file selected in File Explorer through a fixed localhost-only action.
 
 The local agent authors lessons from human corrections under `agent-skills\mad-qa-<category>\references\reviewer-memory.md`; they are loaded only with the matching skill. See [docs/SKILL_MEMORY.md](docs/SKILL_MEMORY.md) for the forced memory-tool turn, routing, provenance, validation, deduplication, safety, and audit behavior.

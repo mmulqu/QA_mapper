@@ -7,12 +7,15 @@ import {
   getProposalAuditInfo,
   getProposalLineage,
   getQaBatchDashboard,
+  getQaBatchJob,
   getQaBatchItem,
+  getQaIssueAtlas,
   getQaIssueRecords,
   getQaRecordMapPreview,
   investigateQaIssue,
   openProposalAuditInFileExplorer,
   readAgentEventStream,
+  refreshQaIssueAtlas,
   rejectCaseDraft,
 } from './agentClient'
 
@@ -122,7 +125,10 @@ describe('local agent client', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await getQaIssueRecords('MADV_QA_ASL_DUPES')
-    await investigateQaIssue('MADV_QA_ASL_DUPES', { recordId: 'QA-ROW-17' })
+    await investigateQaIssue('MADV_QA_ASL_DUPES', {
+      recordId: 'QA-ROW-17',
+      reviewerContext: 'Check the driveway evidence before staging.',
+    })
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
@@ -134,7 +140,10 @@ describe('local agent client', () => {
       '/api/qa/issues/MADV_QA_ASL_DUPES/investigate-stream',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ recordId: 'QA-ROW-17' }),
+        body: JSON.stringify({
+          recordId: 'QA-ROW-17',
+          reviewerContext: 'Check the driveway evidence before staging.',
+        }),
       }),
     )
   })
@@ -160,18 +169,40 @@ describe('local agent client', () => {
     )
   })
 
+  it('loads and explicitly refreshes the versioned QA issue atlas', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ kind: 'mad-qa-issue-atlas', version: '20260726162030123' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getQaIssueAtlas()
+    await refreshQaIssueAtlas()
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/qa/atlas', { signal: undefined })
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/qa/atlas/refresh', {
+      method: 'POST',
+      headers: { 'x-mad-local-action': 'refresh-qa-atlas' },
+      signal: undefined,
+    })
+  })
+
   it('creates, controls, and reopens persistent QA batch work', async () => {
     const dashboard = { kind: 'mad-qa-batch-dashboard', jobs: [], inbox: { items: [] } }
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => dashboard })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ job: { id: 'BATCH-1' }, dashboard }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ job: { id: 'BATCH-1', status: 'paused' }, dashboard }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ job: { id: 'BATCH-1', status: 'running', items: [] } }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ item: { id: 'BATCH-1-001', result: {} } }) })
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(getQaBatchDashboard()).resolves.toEqual(dashboard)
-    await createQaBatch('MADV_QA_ASL_DUPES', ['ROW-1', 'ROW-2'])
+    await createQaBatch('MADV_QA_ASL_DUPES', ['ROW-1', 'ROW-2'], {
+      'ROW-1': 'Check the municipal source note.',
+    })
     await controlQaBatch('BATCH-1', 'pause')
+    await expect(getQaBatchJob('BATCH-1')).resolves.toEqual({ id: 'BATCH-1', status: 'running', items: [] })
     await expect(getQaBatchItem('BATCH-1-001')).resolves.toEqual({
       id: 'BATCH-1-001',
       result: {},
@@ -183,9 +214,11 @@ describe('local agent client', () => {
       body: JSON.stringify({
         viewId: 'MADV_QA_ASL_DUPES',
         recordIds: ['ROW-1', 'ROW-2'],
+        recordPrompts: { 'ROW-1': 'Check the municipal source note.' },
       }),
     }))
     expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/qa/batches/BATCH-1/pause', { method: 'POST' })
-    expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/qa/review-inbox/BATCH-1-001', { signal: undefined })
+    expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/qa/batches/BATCH-1', { signal: undefined })
+    expect(fetchMock).toHaveBeenNthCalledWith(5, '/api/qa/review-inbox/BATCH-1-001', { signal: undefined })
   })
 })

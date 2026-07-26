@@ -12,6 +12,8 @@ export const MAX_QA_BATCH_SIZE = 50
 
 const ACTIVE_ITEM_STATUSES = new Set(['queued', 'running'])
 const REVIEW_ITEM_STATUSES = new Set(['ready', 'withheld', 'failed', 'accepted', 'rejected'])
+const MAX_ITEM_TRANSCRIPT_EVENTS = 120
+const MAX_ITEM_TRANSCRIPT_TEXT = 24_000
 
 function clone(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value))
@@ -79,6 +81,7 @@ function jobSummary(job) {
       address: current.record?.address,
       municipality: current.record?.municipality,
       activity: current.activity ?? null,
+      transcriptCount: safeArray(current.transcript).length,
     } : null,
   }
 }
@@ -93,6 +96,7 @@ function inboxItem(job, item) {
     status: item.status,
     recordId: item.recordId,
     record: item.record,
+    reviewerContext: item.reviewerContext ?? '',
     caseId: item.caseId ?? null,
     proposalId: item.proposalId ?? null,
     changeCount: item.changeCount ?? 0,
@@ -116,6 +120,7 @@ function normalizeLoadedState(raw) {
     job.cancelRequested = Boolean(job.cancelRequested)
     if (job.status === 'running') job.status = job.pauseRequested ? 'paused' : 'queued'
     for (const item of job.items) {
+      item.transcript = safeArray(item.transcript)
       if (item.status === 'running') {
         item.status = job.cancelRequested ? 'cancelled' : 'queued'
         item.activity = null
@@ -143,6 +148,8 @@ export class QaBatchQueue {
     this.pumpScheduled = false
     this.disposed = false
     this.shuttingDown = false
+    this.listeners = new Set()
+    this.persistTimer = null
     this.state = this.readState()
     this.persist()
     if (autoStart) this.schedulePump()
@@ -169,7 +176,7 @@ export class QaBatchQueue {
     renameSync(temporaryPath, this.storagePath)
   }
 
-  create({ viewId, issue, records }) {
+  create({ viewId, issue, records, recordPrompts = {} }) {
     const selected = safeArray(records)
     if (!viewId || !issue?.id) throw new Error('A QA view and issue definition are required.')
     if (!selected.length || selected.length > MAX_QA_BATCH_SIZE) {
@@ -203,9 +210,13 @@ export class QaBatchQueue {
         id: `${id}-${String(index + 1).padStart(3, '0')}`,
         recordId: record.id,
         record: clone(record),
+        reviewerContext: typeof recordPrompts[record.id] === 'string'
+          ? recordPrompts[record.id].trim()
+          : '',
         status: 'queued',
         attempts: 0,
         activity: null,
+        transcript: [],
         startedAt: null,
         completedAt: null,
         result: null,
@@ -265,6 +276,7 @@ export class QaBatchQueue {
     if (!job.items.some((item) => item.status === 'running')) job.status = 'paused'
     job.updatedAt = isoNow(this.clock)
     this.persist()
+    this.publishJobState(job)
     return jobSummary(job)
   }
 
@@ -276,6 +288,7 @@ export class QaBatchQueue {
     job.status = job.items.some((item) => item.status === 'running') ? 'running' : 'queued'
     job.updatedAt = isoNow(this.clock)
     this.persist()
+    this.publishJobState(job)
     this.schedulePump()
     return jobSummary(job)
   }
@@ -299,6 +312,7 @@ export class QaBatchQueue {
     }
     job.updatedAt = isoNow(this.clock)
     this.persist()
+    this.publishJobState(job)
     return jobSummary(job)
   }
 
@@ -334,6 +348,71 @@ export class QaBatchQueue {
     })
   }
 
+  subscribe(jobId, listener) {
+    if (typeof listener !== 'function') throw new Error('A batch stream listener is required.')
+    const subscription = { jobId, listener }
+    this.listeners.add(subscription)
+    return () => this.listeners.delete(subscription)
+  }
+
+  publish(job, payload) {
+    for (const subscription of this.listeners) {
+      if (subscription.jobId !== job.id) continue
+      try {
+        subscription.listener(clone(payload))
+      } catch {
+        // A disconnected browser must never interrupt background investigations.
+      }
+    }
+  }
+
+  publishJobState(job, event = 'state') {
+    this.publish(job, { type: event, job: jobSummary(job) })
+  }
+
+  persistSoon() {
+    if (this.persistTimer || this.disposed) return
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null
+      if (!this.disposed) this.persist()
+    }, 300)
+    this.persistTimer.unref?.()
+  }
+
+  appendTranscript(item, event, recordedAt) {
+    const incoming = {
+      id: event.id || `event-${randomUUID()}`,
+      type: event.type || 'status',
+      phase: event.phase,
+      turn: event.turn,
+      name: event.name,
+      model: event.model,
+      title: event.title,
+      detail: event.detail,
+      text: typeof event.text === 'string' ? event.text : undefined,
+      recordedAt,
+    }
+    const transcript = safeArray(item.transcript)
+    const index = transcript.findIndex((candidate) => candidate.id === incoming.id)
+    const isDelta = incoming.type === 'reasoning_delta' || incoming.type === 'output_delta'
+
+    if (index >= 0) {
+      const existing = transcript[index]
+      const text = isDelta ? `${existing.text || ''}${incoming.text || ''}` : (incoming.text ?? existing.text)
+      const boundedText = text?.length > MAX_ITEM_TRANSCRIPT_TEXT
+        ? `…${text.slice(-MAX_ITEM_TRANSCRIPT_TEXT)}`
+        : text
+      transcript[index] = {
+        ...existing,
+        ...incoming,
+        ...(boundedText ? { text: boundedText } : {}),
+      }
+    } else {
+      transcript.push(incoming)
+    }
+    item.transcript = transcript.slice(-MAX_ITEM_TRANSCRIPT_EVENTS)
+  }
+
   nextWork() {
     for (const job of this.state.jobs.slice().reverse()) {
       if (job.cancelRequested || job.pauseRequested) continue
@@ -345,16 +424,21 @@ export class QaBatchQueue {
 
   updateActivity(job, item, event) {
     if (this.disposed) return
-    if (event.type === 'reasoning_delta' || event.type === 'output_delta') return
-    item.activity = {
-      type: event.type,
-      phase: event.phase,
-      title: event.title,
-      detail: event.detail,
-      updatedAt: isoNow(this.clock),
+    const updatedAt = isoNow(this.clock)
+    this.appendTranscript(item, event, updatedAt)
+    if (event.type !== 'reasoning_delta' && event.type !== 'output_delta') {
+      item.activity = {
+        type: event.type,
+        phase: event.phase,
+        title: event.title,
+        detail: event.detail,
+        updatedAt,
+      }
     }
-    job.updatedAt = item.activity.updatedAt
-    this.persist()
+    job.updatedAt = updatedAt
+    this.publish(job, { type: 'activity', itemId: item.id, event })
+    if (event.type === 'reasoning_delta' || event.type === 'output_delta') this.persistSoon()
+    else this.persist()
   }
 
   async pump() {
@@ -372,13 +456,16 @@ export class QaBatchQueue {
     item.startedAt = startedAt
     item.attempts += 1
     item.error = null
+    item.transcript = []
     this.persist()
+    this.publishJobState(job)
     let interruptedForShutdown = false
 
     try {
       const result = await this.investigate({
         viewId: job.viewId,
         recordId: item.recordId,
+        reviewerContext: item.reviewerContext,
         signal: controller.signal,
         onEvent: (event) => this.updateActivity(job, item, event),
       })
@@ -416,6 +503,7 @@ export class QaBatchQueue {
         job.updatedAt = isoNow(this.clock)
         this.active = null
         this.persist()
+        this.publishJobState(job)
         return
       }
       const completedAt = isoNow(this.clock)
@@ -436,6 +524,7 @@ export class QaBatchQueue {
         job.completedAt = completedAt
       }
       this.persist()
+      this.publishJobState(job, 'complete')
       this.schedulePump()
     }
   }
@@ -444,6 +533,12 @@ export class QaBatchQueue {
     if (this.disposed) return
     this.shuttingDown = true
     this.disposed = true
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer)
+      this.persistTimer = null
+      this.persist()
+    }
+    this.listeners.clear()
     if (!this.active) return
     const job = this.state.jobs.find((candidate) => candidate.id === this.active.jobId)
     const item = job?.items.find((candidate) => candidate.id === this.active.itemId)

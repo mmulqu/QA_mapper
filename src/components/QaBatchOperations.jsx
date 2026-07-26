@@ -5,6 +5,7 @@ import {
   ChevronRight,
   CirclePause,
   CirclePlay,
+  Eye,
   Inbox,
   ListTodo,
   LoaderCircle,
@@ -67,6 +68,7 @@ export function QaBatchQueueWorkspace({
   onRefresh,
   onControl,
   onShowInbox,
+  onOpenTranscript,
 }) {
   const jobs = dashboard?.jobs ?? []
   const queued = jobs.reduce((count, job) => count + job.counts.queued, 0)
@@ -135,6 +137,16 @@ export function QaBatchQueueWorkspace({
                           {' · '}
                           {job.current.activity?.title || 'Local agent is reading the case'}
                         </p>
+                      ) : null}
+                      {job.current ? (
+                        <button
+                          type="button"
+                          className="qa-job-live-output"
+                          onClick={() => onOpenTranscript(job)}
+                          aria-label={`View live agent output for ${job.current.address || job.id}`}
+                        >
+                          <Eye size={15} /> View live output
+                        </button>
                       ) : null}
                     </div>
                     <div className="qa-job-outcomes">

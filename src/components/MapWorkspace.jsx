@@ -99,6 +99,19 @@ function LayerPicker({
       </button>
       {open && (
         <div className="layer-popover" id="map-layers-menu">
+          <header className="layer-popover-header">
+            <div>
+              <strong>Map display</strong>
+              <span>Basemap and vectors</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Back to map tools"
+            >
+              <ArrowLeft size={15} /> Map tools
+            </button>
+          </header>
           <span className="layer-popover-heading">Basemap</span>
           <div className="basemap-buttons" role="group" aria-label="Basemap">
             <button

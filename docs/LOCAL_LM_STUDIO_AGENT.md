@@ -52,6 +52,12 @@ The **Batch queue** screen shows the current row, model activity, completed coun
 
 Opening an inbox item reuses the existing read-only town extract, feature relates, agent rationale, and red/current versus green/proposed diff. The queue never accepts or publishes a result automatically; every proposed MAD change still requires a human decision in the complete diff.
 
+### Per-record reviewer context
+
+Each QA row has an **Add context** control. A reviewer can attach up to 1,200 characters of a case-specific lead, source note, or question before choosing **Run selected** or **Queue selected**. The note is sent only with that row's investigation, stored with that queue item when queued, and shown as a scoped-context activity event.
+
+The bridge quotes this text to the local model as untrusted reviewer context. It may guide what the model checks, but cannot override the selected case, required tool calls, MAD records, relationship rules, or publication safeguards.
+
 ## Configuration
 
 The defaults are intentionally local:

@@ -3,6 +3,7 @@ dist/
 coverage/
 .vite-server.log
 .vite-server.error.log
+.playwright-mcp/
 .DS_Store
 .data/
 .runtime/

@@ -43,6 +43,42 @@ function Test-PortListener {
   return [bool](Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1)
 }
 
+function Resolve-MadPython {
+  $candidatePaths = @()
+  if ($env:MAD_AGENT_PYTHON) {
+    $candidatePaths += $env:MAD_AGENT_PYTHON
+  }
+  if ($env:USERPROFILE) {
+    $candidatePaths += (Join-Path $env:USERPROFILE 'miniconda3\python.exe')
+    $candidatePaths += (Join-Path $env:USERPROFILE 'anaconda3\python.exe')
+  }
+  if ($env:LOCALAPPDATA) {
+    $candidatePaths += (Join-Path $env:LOCALAPPDATA 'miniconda3\python.exe')
+    $candidatePaths += (Join-Path $env:LOCALAPPDATA 'anaconda3\python.exe')
+  }
+  if ($env:CONDA_PREFIX) {
+    $candidatePaths += (Join-Path $env:CONDA_PREFIX 'python.exe')
+  }
+  $pathPython = Get-Command python.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($pathPython) {
+    $candidatePaths += $pathPython.Source
+  }
+
+  foreach ($candidatePath in ($candidatePaths | Where-Object { $_ } | Select-Object -Unique)) {
+    if (-not (Test-Path -LiteralPath $candidatePath)) { continue }
+    try {
+      & $candidatePath -c 'import geopandas, pandas, shapely' *> $null
+      if ($LASTEXITCODE -eq 0) {
+        return (Resolve-Path -LiteralPath $candidatePath).Path
+      }
+    } catch {
+      continue
+    }
+  }
+
+  throw 'A Python environment with GeoPandas, pandas, and Shapely was not found. Set MAD_AGENT_PYTHON to that environment''s python.exe and start the workbench again.'
+}
+
 function Get-AgentSourceVersion {
   $sourceRoots = @(
     (Join-Path $projectRoot 'scripts'),
@@ -100,6 +136,9 @@ try {
   $node = Get-Command node.exe -ErrorAction Stop
   $npm = Get-Command npm.cmd -ErrorAction Stop
   $lms = Get-Command lms.exe -ErrorAction Stop
+  $python = Resolve-MadPython
+  $env:MAD_AGENT_PYTHON = $python
+  Write-Host "Using the MAD Python environment at $python"
 
   $nodeModules = Join-Path $projectRoot 'node_modules'
   $mapRendererPackage = Join-Path $nodeModules 'sharp'
