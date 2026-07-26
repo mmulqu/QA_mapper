@@ -12,7 +12,19 @@ import {
   useMap,
   useMapEvents,
 } from 'react-leaflet'
-import { Bot, GitCompareArrows, Image, Layers3, Map as MapIcon, Minus, Plus, Route } from 'lucide-react'
+import {
+  ArrowLeft,
+  Bot,
+  GitCompareArrows,
+  Image,
+  Layers3,
+  Link2,
+  Map as MapIcon,
+  Minus,
+  Play,
+  Plus,
+  Route,
+} from 'lucide-react'
 import { MAP_SERVICES } from '../config/mapServices'
 import { buildTownFeatureIndex, queryTownFeaturesAtLatLng } from '../lib/mapHitTest'
 
@@ -158,11 +170,11 @@ function PublicMadMapSync({ snapshot }) {
   return null
 }
 
-function TownExtractMapSync({ extract, caseItem }) {
+function TownExtractMapSync({ extract, caseItem, previewMode = false }) {
   const map = useMap()
 
   useEffect(() => {
-    if (caseItem?.center) {
+    if (!previewMode && caseItem?.center) {
       map.setView(caseItem.center, caseItem.zoom || 18)
       return
     }
@@ -174,7 +186,7 @@ function TownExtractMapSync({ extract, caseItem }) {
       ],
       { padding: [48, 48], maxZoom: extract.zoom || 15 },
     )
-  }, [caseItem, extract, map])
+  }, [caseItem, extract, map, previewMode])
 
   return null
 }
@@ -229,17 +241,26 @@ function TownExtractWorkspace({
   changeCount,
   onShowDiff,
   onShowAgent,
+  qaPreview,
+  onBackToQaRows,
+  onRunQaPreview,
 }) {
   const activeBaseMap = activeMapService(baseMap)
+  const previewMode = Boolean(qaPreview)
   const targetAddress = caseItem.records?.addressPoint?.id
   const targetStructure = caseItem.records?.structure?.id
   const vectorLayers = extract.layers.map((layer) => [layer.id, `${layer.label} (${layer.count.toLocaleString()})`])
   const featureIndex = useMemo(() => buildTownFeatureIndex(extract), [extract])
   const queryResults = useMemo(() => new Set(queryResultKeys), [queryResultKeys])
+  const previewAnchors = useMemo(
+    () => new Set(qaPreview?.relation?.anchorFeatureKeys ?? []),
+    [qaPreview],
+  )
   const querySignature = queryResultKeys.join('|')
 
   const isIssueFeature = (feature) => (
-    (feature.properties.__layer === 'addresses' && feature.properties.__id === targetAddress)
+    previewAnchors.has(feature.properties.__recordKey)
+    || (feature.properties.__layer === 'addresses' && feature.properties.__id === targetAddress)
     || (feature.properties.__layer === 'structures' && feature.properties.__id === targetStructure)
   )
 
@@ -270,7 +291,12 @@ function TownExtractWorkspace({
   }
 
   return (
-    <section className="map-workspace" aria-label={`Rockport town extract for ${caseItem.address}`}>
+    <section
+      className={previewMode ? 'map-workspace is-qa-map-preview' : 'map-workspace'}
+      aria-label={previewMode
+        ? `Pre-agent map preview for ${caseItem.address}`
+        : `Rockport town extract for ${caseItem.address}`}
+    >
       <MapContainer
         center={caseItem.center || extract.center}
         zoom={caseItem.zoom || extract.zoom}
@@ -283,7 +309,7 @@ function TownExtractWorkspace({
           maxNativeZoom={activeBaseMap.maxNativeZoom}
           url={activeBaseMap.url}
         />
-        <TownExtractMapSync extract={extract} caseItem={caseItem} />
+        <TownExtractMapSync extract={extract} caseItem={caseItem} previewMode={previewMode} />
         <MapZoomControls />
         <TownMapClickQuery
           featureIndex={featureIndex}
@@ -326,9 +352,15 @@ function TownExtractWorkspace({
       </MapContainer>
 
       <div className="map-case-label qa-case-label">
-        <span className="map-case-id">{caseItem.issueCode}</span>
+        <span className="map-case-id">
+          {previewMode ? 'PRE-AGENT MAP CHECK' : caseItem.issueCode}
+        </span>
         <strong>{caseItem.address}</strong>
-        <span>{caseItem.municipality} · read-only town extract</span>
+        <span>
+          {previewMode
+            ? `${caseItem.municipality} · ${qaPreview.limits.bufferMeters} m bounded context`
+            : `${caseItem.municipality} · read-only town extract`}
+        </span>
       </div>
       <LayerPicker
         visibleLayers={visibleLayers}
@@ -337,13 +369,40 @@ function TownExtractWorkspace({
         setBaseMap={setBaseMap}
         vectorLayers={vectorLayers}
       />
-      <ChangeDiffControl changeCount={changeCount} onShowDiff={onShowDiff} />
-      <AgentControl onShowAgent={onShowAgent} />
-      <div className="map-legend town-extract-legend" aria-label="Town extract map legend">
-        <span><i className="legend-dot current" /> QA feature</span>
-        <span><i className="legend-dot other" /> Town extract</span>
-        <span>{extract.layers.reduce((sum, layer) => sum + layer.count, 0).toLocaleString()} mapped features</span>
-      </div>
+      {previewMode ? (
+        <>
+          <div className="qa-preview-map-actions" aria-label="Pre-agent map actions">
+            <button type="button" onClick={onBackToQaRows}>
+              <ArrowLeft size={17} />
+              Back to rows
+            </button>
+            <button type="button" className="run" onClick={onRunQaPreview}>
+              <Play size={16} fill="currentColor" />
+              Run agent on this issue
+            </button>
+          </div>
+          <div className="qa-preview-map-note" role="note">
+            <Link2 size={18} aria-hidden="true" />
+            <span>
+              <strong>Mapped before agent run</strong>
+              <small>{qaPreview.relation.description}</small>
+              <em>
+                {extract.metadata.loadedFeatureCount.toLocaleString()} features loaded · maximum {qaPreview.limits.maxTotalFeatures}
+              </em>
+            </span>
+          </div>
+        </>
+      ) : (
+        <>
+          <ChangeDiffControl changeCount={changeCount} onShowDiff={onShowDiff} />
+          <AgentControl onShowAgent={onShowAgent} />
+          <div className="map-legend town-extract-legend" aria-label="Town extract map legend">
+            <span><i className="legend-dot current" /> QA feature</span>
+            <span><i className="legend-dot other" /> Town extract</span>
+            <span>{extract.layers.reduce((sum, layer) => sum + layer.count, 0).toLocaleString()} mapped features</span>
+          </div>
+        </>
+      )}
     </section>
   )
 }
@@ -441,6 +500,9 @@ export default function MapWorkspace({
   changeCount,
   onShowDiff,
   onShowAgent,
+  qaPreview,
+  onBackToQaRows,
+  onRunQaPreview,
 }) {
   if (townExtract) {
     return (
@@ -457,6 +519,9 @@ export default function MapWorkspace({
         changeCount={changeCount}
         onShowDiff={onShowDiff}
         onShowAgent={onShowAgent}
+        qaPreview={qaPreview}
+        onBackToQaRows={onBackToQaRows}
+        onRunQaPreview={onRunQaPreview}
       />
     )
   }

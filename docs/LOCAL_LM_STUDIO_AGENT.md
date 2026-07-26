@@ -8,7 +8,7 @@ For the normal local workflow, double-click **Start MAD QA Workbench.cmd** in th
 
 For manual development:
 
-1. In LM Studio, load a tool-capable model and start its local server. The current workstation has `qwen3-4b-thinking-2507` available at `http://127.0.0.1:1234/v1`.
+1. In LM Studio, load a vision- and tool-capable model and start its local server. The default on this workstation is `gemma-4-e4b-it` at `http://127.0.0.1:1234/v1`; another OpenAI-compatible vision model can be selected with `LM_STUDIO_MODEL`.
 2. In one PowerShell window, start the local agent bridge:
 
    ```powershell
@@ -27,7 +27,7 @@ The bridge listens only on `127.0.0.1:8787`; Vite proxies browser `/api/*` reque
 
 ## Live investigation stream
 
-Selecting a QA category first opens a bounded record preview. The reviewer selects up to 10 rows; only **Run selected** opens the center-screen activity transcript. Selected rows run sequentially through `POST /api/qa/issues/:viewId/investigate-stream`, one explicit `recordId` per request. The transcript returns server-sent events for:
+Selecting a QA category first opens a bounded record preview. The reviewer can select up to 50 rows. **Run selected** keeps the immediate, browser-owned workflow and opens the center-screen activity transcript. Selected rows run sequentially through `POST /api/qa/issues/:viewId/investigate-stream`, one explicit `recordId` per request. The transcript returns server-sent events for:
 
 - model turns and final output;
 - reasoning/thinking text when the active model exposes it;
@@ -39,13 +39,26 @@ The stream adapter is model-name agnostic. It recognizes OpenAI-compatible `reas
 
 The browser receives only display-safe summaries for tools; full tool results remain inside the server-side agent loop. The stream sends keep-alives during long local generations. **Stop agent** aborts the browser request, closes the server stream, cancels the upstream LM Studio generation, and prevents later selected rows from starting.
 
+## Persistent batch queue and review inbox
+
+**Queue selected** sends up to 50 chosen QA rows to the localhost bridge. The bridge stores the job and its completed results in `.runtime\qa-batch-jobs.json`, then runs one LM Studio investigation at a time. Because the worker belongs to the bridge rather than the browser tab, the reviewer can close the browser and return later. Restarting the bridge safely returns an interrupted item to the queue.
+
+The **Batch queue** screen shows the current row, model activity, completed count, and review outcomes. A reviewer can pause a batch after its current item, resume it, or cancel the remaining work. The **Review inbox** updates while later items continue and separates:
+
+- ready proposals with changed fields;
+- withheld investigations that did not stage a change;
+- failed model runs; and
+- accepted or rejected decisions.
+
+Opening an inbox item reuses the existing read-only town extract, feature relates, agent rationale, and red/current versus green/proposed diff. The queue never accepts or publishes a result automatically; every proposed MAD change still requires a human decision in the complete diff.
+
 ## Configuration
 
 The defaults are intentionally local:
 
 ```text
 LM_STUDIO_URL=http://127.0.0.1:1234/v1
-LM_STUDIO_MODEL=qwen3-4b-thinking-2507
+LM_STUDIO_MODEL=gemma-4-e4b-it
 MAD_AGENT_HOST=127.0.0.1
 MAD_AGENT_PORT=8787
 ```
@@ -69,6 +82,12 @@ The model is limited to the selected case and receives these tools:
 - `get_qa_investigation_packet` — combined case, QA-row, town-resolution, and relationship context for an automatic category investigation
 - `get_feature`
 - `get_related`
+- `get_qa_rule_trace` — return the selected QA view's failed predicate, exact observed values, approved relationship route, and source limitation
+- `get_relationship_closure` — return the bounded records and cardinalities related to an address point, Master Address, variant, structure, lookup, parcel, or road
+- `compare_case_candidates` — server-rank the bounded competing address-point or structure candidates from relational and vector evidence
+- `list_case_geometries` — list only the selected case's address point, structure, parcel, road, and bounded nearby points before a spatial check
+- `run_case_geospatial_operator` — run `intersects`, `within`, `contains`, distance, or distance-threshold checks on the feature keys returned by `list_case_geometries`
+- `capture_map_evidence` — render one active-case point, structure, or road segment over the MassGIS basemap or 2025 orthoimagery and attach the PNG to the next model turn
 - `stage_fixture_draft`
 - `validate_draft`
 - `get_mad_schema_context` — a narrow read of approved MAD relationship metadata
@@ -78,6 +97,14 @@ The model is limited to the selected case and receives these tools:
 - `massgis_find_nearby`
 
 The MassGIS GeoServer tools are read-only and query only public MassGIS WFS evidence. They run from the local bridge, save any returned GeoJSON only under the ignored `.runtime/geoserver-evidence/` directory, and never receive MAD credentials. The agent describes a GeoServer layer before interpreting it and treats the result as supporting evidence, never as the sole basis for an edit.
+
+`capture_map_evidence` accepts a feature key from the active case, not an arbitrary coordinate, path, or map-service URL. The bridge calculates a bounded viewport, zooms out only enough to fit the selected geometry, mosaics the configured MassGIS tiles, draws the current case vectors and labels, and saves a 768-by-768 PNG under `.runtime/map-evidence/`. Red is current geometry, green is proposed geometry, and gold identifies the selected feature. Only the path, background, feature, and viewport metadata enter the audit transcript; the base64 image is kept out of browser events and attached directly to the model's next turn.
+
+`run_case_geospatial_operator` is vector-based and limited to geometries already in the bounded case workspace. The model must first list the available feature keys, then explicitly choose a subject and one or more comparison features. The result records the selected source layers, geometry types, predicate result, and measured distance where relevant. For the AP missing-structure-lookup workflow, a successful `address-point` → `structure` `intersects` result is required before the bridge will stage a point-to-structure draft.
+
+Before staging an automatic QA draft, the bridge also requires a `get_qa_rule_trace` and `get_relationship_closure` result. Address Variant point-link and missing-structure-lookup cases additionally require the matching `compare_case_candidates` call. These tools are case-scoped evidence only: they neither search statewide MAD nor edit it. Candidate ranking exposes its score and supporting or rejecting facts so the model and reviewer can see why the recommended record won.
+
+Image delivery uses the OpenAI-compatible multimodal content shape with `text` and `image_url` parts. There is no Qwen-, Gemma-, or model-ID branch. The selected LM Studio model must nevertheless be a vision-language model that supports both image input and the tool-calling behavior used by the workbench. Exact coordinates and MAD identifiers continue to come from vector and relationship tools, never from model estimates based on pixels.
 
 `stage_fixture_draft` is deliberately narrow for this MVP: it stages the case's server-declared proposal, retains its source snapshot hash, and runs local validation. It does not create arbitrary geometry or attributes, write any source record, or publish an edit. Evidence-only cases always withhold a draft. A real-data proposal may also be marked reviewable but not publishable when an export omitted the stable identifier required to target the edit safely.
 
@@ -118,5 +145,6 @@ On 2026-07-24, the bridge was exercised against the local LM Studio model `qwen3
 - It answered a routine case-ID question without loading the skill.
 - It investigated `MADV_QA_ASL_DUPES`, read the Rockport record evidence, resolved Rockport through the town/community lookup, and staged the controlled two-to-one lookup-row proposal.
 - It kept that proposal's Accept action blocked because the DBF export did not retain the lookup `OBJECTID`.
+- It rendered real MassGIS 2025 imagery around structure `STR-44108`, attached the PNG through the generic multimodal message contract, and `gemma-4-e4b-it` correctly read the selected feature ID from the image.
 
-This confirms the browser proxy, local bridge, LM Studio tool loop, Rockport town-extract adapter, draft validation, and response contract. It is not a test against production MAD.
+This confirms the browser proxy, local bridge, LM Studio tool and image loop, Rockport town-extract adapter, draft validation, and response contract. It is not a test against production MAD.

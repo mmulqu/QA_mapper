@@ -10,7 +10,7 @@ Investigate `MADV_QA_ASL_*` issues against `MAD_ADDPT_STRUCT_LUT`, address point
 ## Required workflow
 
 1. Read the QA row and every lookup row sharing the affected address-point/structure identifiers.
-2. Resolve `ADDRESS_POINT_ID` to the address point and `STRUCTURE_ID` to the structure geometry.
+2. Resolve `STRUCTURE_ID` to the structure polygon as the QA map anchor. Resolve `ADDRESS_POINT_ID` separately as relational evidence and nearby map context.
 3. Compare town and parcel context and check all Master Addresses sharing the point.
 4. Apply current schema/domain evidence before any reviewer memory.
 5. Classify the issue as confirmed, false positive, or ambiguous.
@@ -19,6 +19,7 @@ Investigate `MADV_QA_ASL_*` issues against `MAD_ADDPT_STRUCT_LUT`, address point
 ## Entity focus
 
 - Treat exact repeated relationship rows as duplicate candidates, not automatically safe deletions.
+- For map preview, relate `MAD_ADDPT_STRUCT_LUT.STRUCTURE_ID` to `MAD_STRUCTURES_POLY.STRUCTURE_ID` and highlight the structure polygon. Do not use the address point as a co-anchor.
 - Require a stable row identifier to target one duplicate for publication.
 - Do not delete a relationship until the remaining lookup preserves the intended point-to-structure association.
 

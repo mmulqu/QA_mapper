@@ -2,9 +2,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   acceptCaseDraft,
   askLocalAgent,
+  controlQaBatch,
+  createQaBatch,
   getProposalAuditInfo,
   getProposalLineage,
+  getQaBatchDashboard,
+  getQaBatchItem,
   getQaIssueRecords,
+  getQaRecordMapPreview,
   investigateQaIssue,
   openProposalAuditInFileExplorer,
   readAgentEventStream,
@@ -132,5 +137,55 @@ describe('local agent client', () => {
         body: JSON.stringify({ recordId: 'QA-ROW-17' }),
       }),
     )
+  })
+
+  it('loads one row map preview without starting an agent request', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ kind: 'mad-qa-map-preview', limits: { bufferMeters: 120 } }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(getQaRecordMapPreview('MADV_QA_BRV_NO_BSA', 'BRV-17')).resolves.toEqual({
+      kind: 'mad-qa-map-preview',
+      limits: { bufferMeters: 120 },
+    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/qa/issues/MADV_QA_BRV_NO_BSA/records/BRV-17/map-preview',
+      { signal: undefined },
+    )
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      '/api/qa/issues/MADV_QA_BRV_NO_BSA/investigate-stream',
+      expect.anything(),
+    )
+  })
+
+  it('creates, controls, and reopens persistent QA batch work', async () => {
+    const dashboard = { kind: 'mad-qa-batch-dashboard', jobs: [], inbox: { items: [] } }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => dashboard })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ job: { id: 'BATCH-1' }, dashboard }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ job: { id: 'BATCH-1', status: 'paused' }, dashboard }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ item: { id: 'BATCH-1-001', result: {} } }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(getQaBatchDashboard()).resolves.toEqual(dashboard)
+    await createQaBatch('MADV_QA_ASL_DUPES', ['ROW-1', 'ROW-2'])
+    await controlQaBatch('BATCH-1', 'pause')
+    await expect(getQaBatchItem('BATCH-1-001')).resolves.toEqual({
+      id: 'BATCH-1-001',
+      result: {},
+    })
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/qa/batches', { signal: undefined })
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/qa/batches', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        viewId: 'MADV_QA_ASL_DUPES',
+        recordIds: ['ROW-1', 'ROW-2'],
+      }),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/qa/batches/BATCH-1/pause', { method: 'POST' })
+    expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/qa/review-inbox/BATCH-1-001', { signal: undefined })
   })
 })

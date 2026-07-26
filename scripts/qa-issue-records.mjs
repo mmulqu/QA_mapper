@@ -1,5 +1,7 @@
-const DEFAULT_PREVIEW_SIZE = 12
-export const QA_SELECTION_LIMIT = 10
+import { buildQaMapPreviewDescriptor } from './qa-map-relations.mjs'
+
+const DEFAULT_PREVIEW_SIZE = 50
+export const QA_SELECTION_LIMIT = 50
 
 const MOCK_ROWS = [
   { address: '12 TEST STREET', municipality: 'BOSTON', recordId: 'MOCK-MA-000012' },
@@ -27,6 +29,8 @@ function recordFromCase(issue, caseItem, index) {
   const affectedRecordId = caseItem.records?.addressPoint?.id
     || caseItem.records?.masterAddress?.id
     || caseItem.id
+  const controlledFault = Boolean(caseItem.qaEvidence?.controlledFault)
+  const sourceLabel = controlledFault ? 'Rockport controlled fault' : 'Rockport MAD extract'
   return {
     id: caseItem.id,
     caseId: caseItem.id,
@@ -37,9 +41,10 @@ function recordFromCase(issue, caseItem, index) {
     affectedRecordId,
     issueDetail: caseItem.rationale || issue.description,
     severity: caseItem.priority || 'Review',
-    sourceLabel: 'Rockport MAD extract',
+    sourceLabel,
     mock: false,
     runnable: true,
+    mapPreview: buildQaMapPreviewDescriptor(issue, caseItem),
     attributes: {
       QA_ROW_ID: caseItem.id,
       QA_VIEW: issue.id,
@@ -47,7 +52,7 @@ function recordFromCase(issue, caseItem, index) {
       ADDRESS: caseItem.address,
       MUNICIPALITY: caseItem.municipality,
       ISSUE_DETAIL: caseItem.rationale || issue.description,
-      SOURCE: 'Rockport MAD extract',
+      SOURCE: sourceLabel,
     },
   }
 }
@@ -68,6 +73,7 @@ function mockRecord(issue, row, index) {
     sourceLabel: 'Mock QA view row',
     mock: true,
     runnable: true,
+    mapPreview: buildQaMapPreviewDescriptor(issue, null, { mock: true }),
     attributes: {
       QA_ROW_ID: id,
       QA_VIEW: issue.id,

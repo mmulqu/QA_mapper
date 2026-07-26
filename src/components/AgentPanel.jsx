@@ -1,5 +1,5 @@
-import { Bot, BrainCircuit, CheckCircle2, LoaderCircle, Send, Sparkles, Wrench, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { ArrowLeft, Bot, BrainCircuit, Check, CheckCircle2, CircleAlert, Database, LoaderCircle, ScrollText, Send, Sparkles, Wrench, X } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { askLocalAgent } from '../lib/agentClient'
@@ -9,6 +9,47 @@ const starterPrompts = [
   'Review the evidence and stage a draft if it is safe.',
 ]
 
+const transcriptEventMeta = {
+  status: { label: 'System', icon: Database },
+  model: { label: 'Model', icon: Bot },
+  reasoning: { label: 'Thinking', icon: BrainCircuit },
+  output: { label: 'Output', icon: Sparkles },
+  skill: { label: 'Skill', icon: Sparkles },
+  tool: { label: 'Tool', icon: Wrench },
+}
+
+function TranscriptEvent({ event }) {
+  const meta = transcriptEventMeta[event.type] || transcriptEventMeta.status
+  const Icon = event.phase === 'error' ? CircleAlert : meta.icon
+  const complete = event.phase === 'completed'
+
+  return (
+    <article className={`activity-event is-${event.type} is-${event.phase || 'running'}`}>
+      <span className="activity-event-tag">
+        <Icon size={14} aria-hidden="true" />
+        {meta.label}
+      </span>
+      <div className="activity-event-body">
+        <header>
+          <strong>{event.title || (event.type === 'reasoning' ? 'Model reasoning' : 'Model response')}</strong>
+          {complete ? <span><Check size={13} aria-hidden="true" /> Complete</span> : null}
+          {event.phase === 'started' ? <span className="is-live">Live</span> : null}
+        </header>
+        {event.name ? <code>{event.name}</code> : null}
+        {event.text ? (
+          event.type === 'output' ? (
+            <div className="activity-markdown">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
+                {event.text}
+              </ReactMarkdown>
+            </div>
+          ) : <p className="activity-stream-text">{event.text}</p>
+        ) : event.detail ? <p>{event.detail}</p> : null}
+      </div>
+    </article>
+  )
+}
+
 export default function AgentPanel({
   caseItem,
   onClose,
@@ -16,6 +57,7 @@ export default function AgentPanel({
   onReviewDraft,
   reviewerFeedback,
   initialResult = null,
+  runActivity = [],
   automaticStatus = 'idle',
 }) {
   const [messages, setMessages] = useState([])
@@ -23,6 +65,7 @@ export default function AgentPanel({
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState('')
   const [hasDraft, setHasDraft] = useState(false)
+  const [showRunTranscript, setShowRunTranscript] = useState(false)
 
   useEffect(() => {
     setMessages([])
@@ -30,6 +73,7 @@ export default function AgentPanel({
     setStatus('idle')
     setError('')
     setHasDraft(false)
+    setShowRunTranscript(false)
   }, [caseItem.id])
 
   useEffect(() => {
@@ -43,6 +87,24 @@ export default function AgentPanel({
   }, [initialResult])
 
   const isWorking = status === 'working' || automaticStatus === 'working'
+  const transcriptEvents = useMemo(() => {
+    const reply = initialResult?.reply?.trim()
+    const capturedOutput = runActivity
+      .filter((event) => event.type === 'output' || event.type === 'output_delta')
+      .map((event) => event.text || '')
+      .join(' ')
+      .replaceAll(/\s+/g, ' ')
+      .trim()
+    const normalizedReply = reply?.replaceAll(/\s+/g, ' ').trim()
+    if (!reply || (normalizedReply && capturedOutput.includes(normalizedReply))) return runActivity
+    return [...runActivity, {
+      id: `${caseItem.id}:final-agent-response`,
+      type: 'output',
+      phase: 'completed',
+      title: 'Final model response',
+      text: reply,
+    }]
+  }, [caseItem.id, initialResult?.reply, runActivity])
 
   const submit = async (message) => {
     const prompt = message.trim()
@@ -71,6 +133,42 @@ export default function AgentPanel({
     }
   }
 
+  if (showRunTranscript) {
+    return (
+      <aside className="agent-panel is-transcript" aria-label="Full LLM run transcript">
+        <header className="agent-header">
+          <button
+            type="button"
+            className="agent-transcript-back"
+            onClick={() => setShowRunTranscript(false)}
+            aria-label="Back to agent conversation"
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <div>
+            <span>Captured QA investigation</span>
+            <h2>Full LLM run transcript</h2>
+          </div>
+          <button type="button" className="inspector-close" onClick={onClose} aria-label="Close local agent">
+            <X size={20} />
+          </button>
+        </header>
+
+        <div className="agent-scroll-region">
+          <p className="agent-scope-note">
+            <ScrollText size={16} />
+            This is the captured investigation sequence. Thinking appears only when the model exposed it.
+          </p>
+          <div className="agent-run-transcript" aria-label="Captured LLM activity">
+        {transcriptEvents.length ? transcriptEvents.map((event) => <TranscriptEvent key={event.id} event={event} />) : (
+              <p className="agent-transcript-empty">No streamed LLM activity was captured for this run.</p>
+            )}
+          </div>
+        </div>
+      </aside>
+    )
+  }
+
   return (
     <aside className="agent-panel" aria-label="Local MAD agent" aria-busy={isWorking}>
       <header className="agent-header">
@@ -86,6 +184,21 @@ export default function AgentPanel({
 
       <div className="agent-scroll-region">
         <p className="agent-scope-note"><Sparkles size={16} /> LM Studio reads this issue and its selected town extract. It can stage a review draft, never publish one.</p>
+
+        {transcriptEvents.length ? (
+          <button
+            type="button"
+            className="agent-transcript-trigger"
+            onClick={() => setShowRunTranscript(true)}
+            aria-label="View full LLM run transcript"
+          >
+            <ScrollText size={18} aria-hidden="true" />
+            <span>
+              <strong>View full LLM run transcript</strong>
+              <small>{transcriptEvents.length} captured events: output, skills, tools, and model-visible thinking.</small>
+            </span>
+          </button>
+        ) : null}
 
         {reviewerFeedback?.status === 'active' ? (
           <div className="agent-review-feedback">
