@@ -76,7 +76,7 @@ function Resolve-MadPython {
     }
   }
 
-  throw 'A Python environment with GeoPandas, pandas, and Shapely was not found. Set MAD_AGENT_PYTHON to that environment''s python.exe and start the workbench again.'
+  throw 'A Python environment with GeoPandas, pandas, and Shapely was not found. Install requirements-local.txt into one environment, set MAD_AGENT_PYTHON to that environment''s python.exe, and start the workbench again.'
 }
 
 function Get-AgentSourceVersion {

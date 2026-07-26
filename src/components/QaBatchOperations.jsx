@@ -9,8 +9,11 @@ import {
   Inbox,
   ListTodo,
   LoaderCircle,
+  MessageSquare,
   RefreshCw,
   Square,
+  Trophy,
+  UserRound,
   XCircle,
 } from 'lucide-react'
 
@@ -41,8 +44,11 @@ function QueueState({ status, error, onRefresh }) {
   )
 }
 
-function JobControls({ job, onControl }) {
+function JobControls({ job, onControl, reviewer }) {
   if (['completed', 'cancelled'].includes(job.status)) return null
+  if (job.createdBy?.id && job.createdBy.id !== reviewer?.id) {
+    return <small className="qa-job-owner-lock">Controlled by {job.createdBy.name}</small>
+  }
   return (
     <div className="qa-job-controls">
       {job.status === 'paused' ? (
@@ -69,15 +75,18 @@ export function QaBatchQueueWorkspace({
   onControl,
   onShowInbox,
   onOpenTranscript,
+  reviewer,
 }) {
   const jobs = dashboard?.jobs ?? []
-  const queued = jobs.reduce((count, job) => count + job.counts.queued, 0)
-  const running = jobs.reduce((count, job) => count + job.counts.running, 0)
+  const sharedEntries = dashboard?.agentQueue?.entries ?? []
+  const queued = sharedEntries.filter((entry) => entry.status === 'queued').length
+  const running = sharedEntries.filter((entry) => entry.status === 'running').length
   const reviewable = dashboard?.inbox?.counts?.ready ?? 0
+  const reviewerStats = dashboard?.reviewerActivity?.reviewers ?? []
 
   return (
     <section className="map-workspace qa-queue-workspace" aria-label="Persistent QA batch queue">
-      <div className="qa-operations-sheet">
+      <div className="qa-operations-sheet is-batch">
         <header className="qa-operations-header">
           <span className="qa-operations-icon"><ListTodo size={24} /></span>
           <div>
@@ -109,6 +118,84 @@ export function QaBatchQueueWorkspace({
               </span>
             </div>
 
+            <section className="qa-agent-ledger" aria-labelledby="shared-agent-queue-heading">
+              <header>
+                <div>
+                  <span>Global request order</span>
+                  <h3 id="shared-agent-queue-heading">Shared agent queue</h3>
+                </div>
+                <small>Issue investigations and follow-up prompts use this same FIFO order.</small>
+              </header>
+              {!sharedEntries.length ? (
+                <p className="qa-agent-ledger-empty">The shared model queue is clear.</p>
+              ) : (
+                <ol>
+                  {sharedEntries.map((entry) => (
+                    <li key={entry.id} className={entry.status === 'running' ? 'is-running' : undefined}>
+                      <strong>#{entry.position}</strong>
+                      <span className="qa-agent-kind">
+                        {entry.kind === 'case-follow-up'
+                          ? <MessageSquare size={15} aria-hidden="true" />
+                          : <ListTodo size={15} aria-hidden="true" />}
+                        {entry.kind === 'case-follow-up'
+                          ? 'Follow-up'
+                          : entry.kind === 'review-memory' ? 'Review note' : 'Issue'}
+                      </span>
+                      <span className="qa-agent-request-copy">
+                        <b>{entry.label}</b>
+                        <small>{entry.detail}</small>
+                      </span>
+                      <span className="qa-agent-owner">
+                        <UserRound size={14} aria-hidden="true" />
+                        {entry.owner?.id === reviewer?.id ? 'You' : entry.owner?.name || 'Reviewer'}
+                      </span>
+                      <span className="qa-agent-state">
+                        {entry.status === 'running'
+                          ? <LoaderCircle className="agent-spinner" size={14} aria-hidden="true" />
+                          : null}
+                        {entry.status === 'running' ? 'Running' : `${entry.ahead} ahead`}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+              <div className="qa-recovery-ledger" aria-labelledby="agentic-recovery-heading">
+                <header>
+                  <div>
+                    <Trophy size={16} aria-hidden="true" />
+                    <strong id="agentic-recovery-heading">Agentic recovery ledger</strong>
+                  </div>
+                  <small>
+                    A recovery credits the initials that staged the final revision after a rejection.
+                  </small>
+                </header>
+                {!reviewerStats.length ? (
+                  <p>No attributed follow-ups yet.</p>
+                ) : (
+                  <div className="qa-recovery-table" role="table" aria-label="Reviewer recovery statistics">
+                    <span className="is-heading" role="columnheader">Initials</span>
+                    <span className="is-heading" role="columnheader">Follow-ups</span>
+                    <span className="is-heading" role="columnheader">Revisions</span>
+                    <span className="is-heading" role="columnheader">Recovered</span>
+                    {reviewerStats.map((stats, index) => (
+                      <div className={index === 0 && stats.recoveredProposals ? 'is-leader' : undefined} role="row" key={stats.initials}>
+                        <strong role="cell">{stats.initials}</strong>
+                        <span role="cell">{stats.followUps}</span>
+                        <span role="cell">{stats.revisionsStaged}</span>
+                        <span role="cell">
+                          {stats.recoveredProposals}
+                          {index === 0 && stats.recoveredProposals
+                            ? <small>Recovery leader</small>
+                            : null}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <code>{dashboard?.reviewerActivity?.relativePath}</code>
+              </div>
+            </section>
+
             <div className="qa-job-list">
               {!jobs.length ? (
                 <div className="qa-operations-empty">
@@ -127,7 +214,10 @@ export function QaBatchQueueWorkspace({
                     <div className="qa-job-main">
                       <strong>{job.issue.description}</strong>
                       <code>{job.id}</code>
-                      <span>{job.model} · {job.completed} of {job.total} finished</span>
+                      <span>
+                        {job.model} · {job.completed} of {job.total} finished · queued by{' '}
+                        {job.createdBy?.id === reviewer?.id ? 'you' : job.createdBy?.name || 'local reviewer'}
+                      </span>
                       <div className="qa-job-progress" aria-label={`${progress}% complete`}>
                         <span style={{ transform: `scaleX(${progress / 100})` }} />
                       </div>
@@ -154,7 +244,7 @@ export function QaBatchQueueWorkspace({
                       <span><b>{job.counts.withheld}</b> withheld</span>
                       <span><b>{job.counts.failed}</b> failed</span>
                     </div>
-                    <JobControls job={job} onControl={onControl} />
+                    <JobControls job={job} onControl={onControl} reviewer={reviewer} />
                   </article>
                 )
               })}
@@ -191,6 +281,7 @@ export function QaReviewInboxWorkspace({
   onRefresh,
   onShowQueue,
   onOpenReview,
+  reviewer,
 }) {
   const counts = dashboard?.inbox?.counts ?? {}
   const [filter, setFilter] = useState('ready')
@@ -202,7 +293,7 @@ export function QaReviewInboxWorkspace({
 
   return (
     <section className="map-workspace qa-queue-workspace" aria-label="QA review inbox">
-      <div className="qa-operations-sheet">
+      <div className="qa-operations-sheet is-inbox">
         <header className="qa-operations-header">
           <span className="qa-operations-icon"><Inbox size={24} /></span>
           <div>
@@ -260,12 +351,24 @@ export function QaReviewInboxWorkspace({
                     <small>{item.record.municipality} · {item.viewId}</small>
                     <p>{item.summary}</p>
                     <code>{item.model} · {item.changeCount} changed fields</code>
+                    {item.claimedBy ? (
+                      <small className="qa-inbox-claim">
+                        <UserRound size={13} aria-hidden="true" />
+                        {item.claimedBy.id === reviewer?.id
+                          ? 'Claimed by you'
+                          : `In review by ${item.claimedBy.name}`}
+                      </small>
+                    ) : null}
                   </div>
-                  {item.canOpen ? (
+                  {item.canOpen && (item.canClaim !== false || item.claimedByMe) ? (
                     <button type="button" onClick={() => onOpenReview(item)}>
-                      {item.status === 'ready' ? 'Open review' : 'Inspect result'}
+                      {item.claimedByMe
+                        ? 'Continue review'
+                        : item.status === 'ready' ? 'Claim & review' : 'Claim & inspect'}
                       <ChevronRight size={16} />
                     </button>
+                  ) : item.canOpen && item.claimedBy ? (
+                    <strong className="qa-inbox-no-result">In review</strong>
                   ) : (
                     <strong className="qa-inbox-no-result">No review result</strong>
                   )}

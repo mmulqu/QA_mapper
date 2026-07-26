@@ -4,13 +4,17 @@ This runbook is written for an LLM or coding agent helping a person install the 
 
 ## 1. Installation contract
 
-The target is a local, training-only workstation deployment:
+The target is a training-only deployment on one Windows machine. It supports
+either one local developer or several trusted Windows users logged into the
+same AWS WorkSpace:
 
-- the React/Vite app listens on `127.0.0.1:4173`;
-- the Node agent bridge listens on `127.0.0.1:8787`;
+- the shared built app and Node bridge both listen on `127.0.0.1:8787`;
+- Vite on `127.0.0.1:4173` is used only for single-user development;
 - LM Studio's OpenAI-compatible API listens on `127.0.0.1:1234`;
+- exactly one Node bridge process owns all QA and LLM work;
 - one existing Python environment supplies GeoPandas, pandas, and Shapely;
 - local generated state stays under ignored `.runtime/`;
+- each reviewer enters 2–6 initials for coordination and audit attribution;
 - no production MAD credential enters the browser;
 - ArcPy and an enterprise geodatabase are not required for local installation.
 
@@ -22,11 +26,57 @@ Do not:
 - install the same Python geospatial stack into several Conda environments;
 - install MapLibre, PMTiles, Tippecanoe, or WSL for the issue atlas;
 - enable `MAD_PUBLISH_MODE=apply`;
-- expose ports `1234`, `4173`, or `8787` beyond localhost;
+- expose ports `1234`, `4173`, or `8787` beyond the AWS WorkSpace;
+- start a second Node bridge process against the same `.runtime/` directory;
 - delete `.runtime/` unless the user explicitly approves losing local queues, proposal history, and generated evidence;
 - stop an unknown process merely because it owns one of the expected ports.
 
-## 2. Supported platform and validated stack
+## 2. Current multi-user status
+
+The current release supports coordinated use by trusted people whose separate
+Windows sessions all run on the **same AWS WorkSpace machine**. Windows
+loopback is machine-wide, so every session can open
+<http://127.0.0.1:8787> and reach the one shared bridge. Do not deploy this
+design across several machines or run more than one bridge process.
+
+| Capability | Current behavior |
+| --- | --- |
+| Users in separate sessions on this AWS WorkSpace | Supported. They see the same queue, inbox, claims, decisions, and follow-up conversation through one bridge. |
+| Users on different machines | Not supported. The bridge intentionally binds to `127.0.0.1`. |
+| Reviewer identity | The browser requires 2–6 initials. Initials are coordination metadata, not authenticated SSO, and duplicate initials are possible. |
+| One sequential LLM worker | Every issue investigation, case follow-up, and reviewer-memory request shares one persistent FIFO sequence and concurrency is exactly `1`. |
+| Queue position | The global queue and each streaming follow-up show exact position, total, and work ahead. |
+| “Who is working on this?” | Jobs carry their creator. Review items use a 60-minute claim lease and show the claimant's initials. |
+| Duplicate-work prevention | A `(viewId, recordId)` already active, reviewable, accepted, or rejected cannot be queued again. A batch also rejects duplicate rows. |
+| Safe concurrent decisions | Claim versions provide optimistic concurrency. A stale tab or a person without the claim cannot accept/reject. Only a batch creator can pause, resume, or cancel it. |
+| Shared durable state | Queue, requests, transcripts, claims, and decisions persist in `.runtime\qa-batch-jobs.json`. |
+| Activity attribution | `.runtime\reviewer-agent-activity.jsonl` appends the actor initials for issues, claims, every follow-up prompt, revisions, decisions, and rejected-to-accepted recoveries. |
+| Multiple API or worker processes | Not supported or needed on this one machine. Local JSON/JSONL stores require exactly one Node owner. |
+
+This is a trusted-workspace coordination model, not a security boundary. Anyone
+who can use the WorkSpace can choose any initials and call the loopback API.
+Back up `.runtime/`, restrict access to the WorkSpace, and use one approved
+service account to run the bridge.
+
+A future deployment across several machines needs, at minimum:
+
+1. one centrally hosted internal web/API deployment over HTTPS, rather than Vite's development server;
+2. organizational SSO through OIDC/SAML or an approved reverse-proxy identity layer;
+3. user and role records for reviewer, approver, administrator, and service identities;
+4. a transactional shared database for QA issues, assignments, jobs, results, decisions, and audit events;
+5. an atomic claim/lease operation with `claimed_by`, `claimed_at`, expiration, status, and release/reassignment rules;
+6. one stable issue key such as `(source_run_id, view_id, record_id)` plus a database uniqueness rule that prevents more than one active claim or queued/running investigation;
+7. idempotency keys on enqueue and decision requests;
+8. optimistic concurrency/version checks so a stale browser cannot accept, reject, pause, or reassign newer state;
+9. one centralized sequential LLM worker, or database-backed worker locking that guarantees global concurrency `1` across service replicas;
+10. reviewer-visible assignee, activity, timestamps, and resolution state refreshed through SSE/WebSocket or polling;
+11. append-only audit records containing authenticated actor identity and before/after state;
+12. shared evidence/object storage where more than one service process can read generated artifacts.
+
+Until those controls exist, keep the application on one trusted AWS WorkSpace
+and treat initials as self-asserted coordination identity.
+
+## 3. Supported platform and validated stack
 
 The automated launcher is Windows PowerShell code. The currently validated workstation stack is:
 
@@ -50,7 +100,7 @@ LM Studio's Windows guidance recommends at least 16 GB RAM and 4 GB dedicated VR
 
 The selected local model must support OpenAI-compatible tool calling. Vision support is also needed for map-image evidence. The launcher's default model identifier is `gemma-4-e4b-it`, but another installed model may be supplied with `-Model`.
 
-## 3. Inspect the machine first
+## 4. Inspect the machine first
 
 Run these read-only commands in PowerShell:
 
@@ -85,7 +135,7 @@ Interpret the results:
 4. Do not trust `Get-Command python.exe` alone. A path under `WindowsApps` may be the Microsoft Store alias rather than Python.
 5. Search existing Conda base and named environments for the required imports before installing packages.
 
-## 4. Obtain the repository
+## 5. Obtain the repository
 
 If the repository is not already present:
 
@@ -113,7 +163,7 @@ Test-Path -LiteralPath '.\data\MAD_QA_20260724.txt'
 
 Both results must be `True`.
 
-## 5. Select one working Python environment
+## 6. Select one working Python environment
 
 The launcher searches these candidates and uses the first interpreter that successfully imports GeoPandas, pandas, and Shapely:
 
@@ -124,18 +174,29 @@ The launcher searches these candidates and uses the first interpreter that succe
 5. the active `CONDA_PREFIX`;
 6. `python.exe` from `PATH`.
 
+The project's complete minimal Python install request is [requirements-local.txt](../requirements-local.txt):
+
+```text
+geopandas==1.1.2
+```
+
+GeoPandas declares the runtime dependency set needed here, including pandas,
+Shapely, pyproj, pyogrio, NumPy, and packaging. ArcPy, Jupyter, matplotlib,
+SciPy, PostGIS drivers, and Python web frameworks are not required for the
+local workbench.
+
 Probe a candidate directly:
 
 ```powershell
 $madPython = Join-Path $env:USERPROFILE 'miniconda3\python.exe'
-& $madPython -c "import sys, geopandas, pandas, shapely; print(sys.executable); print(geopandas.__version__, pandas.__version__, shapely.__version__)"
+& $madPython -c "import sys, geopandas, pandas, shapely, pyproj, pyogrio; print(sys.executable); print(geopandas.__version__, pandas.__version__, shapely.__version__, pyproj.__version__, pyogrio.__version__)"
 ```
 
 If that fails, inspect other existing environments:
 
 ```powershell
 conda env list
-conda run -n <environment-name> python -c "import sys, geopandas, pandas, shapely; print(sys.executable)"
+conda run -n <environment-name> python -c "import sys, geopandas, pandas, shapely, pyproj, pyogrio; print(sys.executable)"
 ```
 
 When one succeeds, either let the launcher discover it or set the exact path for the current session:
@@ -144,21 +205,40 @@ When one succeeds, either let the launcher discover it or set the exact path for
 $env:MAD_AGENT_PYTHON = 'C:\exact\environment\python.exe'
 ```
 
-Only when no existing environment works, ask the user which single environment should own the packages. For a Conda environment:
+Only when no existing environment works, ask the user which single environment should own the packages.
+
+On a clean target workstation with Conda available, create one project-specific environment:
 
 ```powershell
-conda install -n <environment-name> -c conda-forge geopandas pandas shapely
+conda create -n mad-qa -c conda-forge python=3.13 geopandas=1.1.2
+conda run -n mad-qa python -c "import sys, geopandas, pandas, shapely, pyproj, pyogrio; print(sys.executable)"
+conda run -n mad-qa python -c "import sys; print(sys.executable)"
 ```
 
-For a non-Conda virtual environment, use its interpreter rather than bare `pip`:
+Use the final command's output as `MAD_AGENT_PYTHON`.
+
+For a clean machine using standard Python instead of Conda:
 
 ```powershell
-& 'C:\exact\environment\python.exe' -m pip install geopandas pandas shapely
+py -3.13 -m venv .venv
+& '.\.venv\Scripts\python.exe' -m pip install --upgrade pip
+& '.\.venv\Scripts\python.exe' -m pip install -r '.\requirements-local.txt'
+& '.\.venv\Scripts\python.exe' -c "import sys, geopandas, pandas, shapely, pyproj, pyogrio; print(sys.executable)"
+$env:MAD_AGENT_PYTHON = (Resolve-Path '.\.venv\Scripts\python.exe').Path
 ```
 
-Re-run the import probe after installation. Do not install `arcpy`; it is optional and reserved for a future approved production publisher.
+Do not run both installation paths. Re-run the import probe after installation. Do not install `arcpy`; it is optional and reserved for a future approved production publisher.
 
-## 6. Install JavaScript dependencies
+For the shared AWS WorkSpace, install under the same Windows account that will
+run the bridge, or grant that service account read/execute access to the chosen
+interpreter. Record the absolute `python.exe` path in the service configuration;
+do not rely on an activated Conda shell or a prior developer machine's
+environment name. On a clean work machine, the repository-local `.venv` recipe
+above is the most self-describing choice. It installs the one declared package
+from `requirements-local.txt`; pip resolves its required pandas, Shapely,
+pyproj, pyogrio, NumPy, and packaging dependencies.
+
+## 7. Install JavaScript dependencies
 
 From the repository root:
 
@@ -170,7 +250,7 @@ The double-click launcher also runs `npm install` when `node_modules` or the `sh
 
 Do not add extra map packages. The detailed maps and QA Issue Atlas use the existing Leaflet and React-Leaflet dependencies. The issue atlas data is versioned local GeoJSON.
 
-## 7. Prepare LM Studio
+## 8. Prepare LM Studio
 
 1. Install and launch LM Studio.
 2. Download a tool-capable, vision-capable model that fits the workstation.
@@ -197,7 +277,57 @@ LM Studio documents `lms server start`, model management, and server status here
 
 Keep the server bound to `127.0.0.1`. CORS is unnecessary because the browser communicates through the local Node bridge.
 
-## 8. Start the workbench
+## 9. Start the workbench
+
+### Shared AWS WorkSpace service
+
+Run this path once under the approved service account. Other users must not run
+the local launcher or start their own bridge:
+
+```powershell
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+  -File '.\scripts\start-shared-workbench.ps1' `
+  -PythonPath 'C:\absolute\path\to\python.exe' `
+  -Model 'gemma-4-e4b-it'
+```
+
+The script validates the exact Python interpreter, installs the JavaScript
+lockfile dependencies, builds the React app, starts or reuses LM Studio, loads
+the selected model, and then runs the single Node bridge in the foreground.
+The bridge serves both the API and the built app at
+<http://127.0.0.1:8787>. All Windows users on that AWS WorkSpace open that same
+URL and enter their own 2–6 initials.
+
+For unattended operation, configure Windows Task Scheduler to invoke that exact
+PowerShell command:
+
+- run under one approved service account;
+- set **Start in** to the repository root;
+- select **Run whether user is logged on or not**;
+- trigger at machine startup;
+- do not enable parallel task instances;
+- redirect normal task output according to the workplace's log-retention
+  policy.
+
+The task must own a single long-running `node.exe scripts/agent-server.mjs`
+process. If port `8787` is already occupied, the shared launcher fails closed
+instead of stopping an unknown or existing bridge. During an upgrade, stop the
+scheduled task, back up `.runtime/`, update and test the repository, then start
+the task once.
+
+The shared state that must survive restarts is:
+
+| Path | Contents |
+| --- | --- |
+| `.runtime\qa-batch-jobs.json` | FIFO requests, batch items, transcripts, claims, versions, results, and decisions |
+| `.runtime\reviewer-agent-activity.jsonl` | Append-only initials attribution, exact follow-up prompts, revisions, decisions, and recovery credit |
+| `.runtime\proposal-history.csv` | Proposal lineage events |
+| `.runtime\map-evidence\` and related evidence folders | Generated review evidence |
+
+Back up the entire `.runtime/` directory while the bridge is stopped. Restoring
+only one of these files can separate attribution from the work it describes.
+
+### Single-user local development
 
 Normal user path:
 
@@ -232,7 +362,7 @@ MAD QA Workbench is ready.
 
 Open <http://127.0.0.1:4173>.
 
-## 9. Verify the installation
+## 10. Verify the installation
 
 Run all checks from the repository root.
 
@@ -241,8 +371,9 @@ Run all checks from the repository root.
 ```powershell
 $lmModels = Invoke-RestMethod -Uri 'http://127.0.0.1:1234/v1/models' -TimeoutSec 10
 $health = Invoke-RestMethod -Uri 'http://127.0.0.1:8787/api/health' -TimeoutSec 10
-$app = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:4173' -TimeoutSec 10
-$atlas = Invoke-RestMethod -Uri 'http://127.0.0.1:4173/api/qa/atlas' -TimeoutSec 120
+$app = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8787' -TimeoutSec 10
+$atlas = Invoke-RestMethod -Uri 'http://127.0.0.1:8787/api/qa/atlas' -TimeoutSec 120
+$activity = Invoke-RestMethod -Uri 'http://127.0.0.1:8787/api/audit/reviewer-activity' -TimeoutSec 10
 
 [pscustomobject]@{
   LmModelCount = @($lmModels.data).Count
@@ -251,6 +382,7 @@ $atlas = Invoke-RestMethod -Uri 'http://127.0.0.1:4173/api/qa/atlas' -TimeoutSec
   AppStatus = $app.StatusCode
   AtlasFormat = $atlas.dataFormat
   AtlasFeatures = $atlas.featureCollection.features.Count
+  ActivityLog = $activity.relativePath
 }
 ```
 
@@ -262,6 +394,10 @@ Expected signals:
 - `AppStatus` is `200`;
 - `AtlasFormat` is `geojson`;
 - the supplied Rockport fixture currently returns `7` atlas features when controlled faults are enabled.
+- `ActivityLog` is `.runtime\reviewer-agent-activity.jsonl`.
+
+For a Vite development run, use port `4173` for `$app` and `$atlas`. The shared
+service verification above deliberately uses only port `8787`.
 
 ### Automated checks
 
@@ -281,7 +417,27 @@ The build may report a non-fatal bundle-size advisory. A test failure or nonzero
 5. Open one QA category and confirm its bounded row preview loads.
 6. Do not accept or publish a proposal as part of an installation smoke test.
 
-## 10. Troubleshooting
+### Two-user coordination smoke test
+
+Use two separate Windows sessions on the same AWS WorkSpace:
+
+1. User A opens <http://127.0.0.1:8787>, enters their initials, and queues one
+   issue.
+2. User B opens the same URL, enters different initials, and confirms the issue,
+   owner, current status, and global queue position are visible.
+3. User B attempts to queue that same issue and confirms the bridge rejects the
+   duplicate.
+4. One user claims the completed review item. Confirm the other sees the
+   claimant and cannot claim or decide it.
+5. Queue a case follow-up while other work exists. Confirm its panel shows
+   `position X of Y` and the shared queue shows the same FIFO order.
+6. Confirm the prompt author appears in the shared case conversation and a
+   `followup_prompt_queued` line with those initials and the exact prompt exists
+   in `.runtime\reviewer-agent-activity.jsonl`.
+
+Do not run a second bridge for this test.
+
+## 11. Troubleshooting
 
 ### “Python was not found” or Microsoft Store alias
 
@@ -300,7 +456,7 @@ The bridge must be restarted after changing `MAD_AGENT_PYTHON`; an already-runni
 
 ### `ModuleNotFoundError: geopandas`
 
-The selected interpreter is real Python but lacks the geospatial stack. Search other existing Conda environments first. Install into one agreed environment only, set `MAD_AGENT_PYTHON`, and restart the launcher.
+The selected interpreter is real Python but lacks the geospatial stack. Search other existing Conda environments first. If none works, install `requirements-local.txt` into one agreed environment, set `MAD_AGENT_PYTHON`, and restart the launcher.
 
 ### `lms.exe` is missing
 
@@ -351,7 +507,7 @@ The launcher safely refreshes its own `scripts\agent-server.mjs` process on port
 Check the local data before blaming the public basemap:
 
 ```powershell
-$atlas = Invoke-RestMethod -Uri 'http://127.0.0.1:4173/api/qa/atlas' -TimeoutSec 120
+$atlas = Invoke-RestMethod -Uri 'http://127.0.0.1:8787/api/qa/atlas' -TimeoutSec 120
 $atlas.dataFormat
 $atlas.featureCollection.features.Count
 $atlas.bounds
@@ -382,7 +538,7 @@ Invoke-RestMethod `
 
 Record `node --version`, `npm --version`, and the complete npm error. Prefer a supported Node LTS version, remove no lockfile without approval, and retry `npm install` once after correcting the concrete cause.
 
-## 11. Optional production boundary
+## 12. Production boundary
 
 Local installation validates publisher handoffs without editing MAD. Production apply mode is intentionally incomplete and out of scope.
 
@@ -394,7 +550,14 @@ $env:MAD_PUBLISH_MODE = 'apply'
 
 Do not install ArcGIS Pro or ArcPy solely for the local workbench. A future production deployment must separately provide an approved ArcGIS Pro Python path through `MAD_ARCPY_PYTHON`, enterprise connection/version details, field mappings, authentication, transactional editing, validators, and audit storage. See [ARCPY_BRIDGE.md](ARCPY_BRIDGE.md).
 
-## 12. Agent completion report
+Moving the code to one shared AWS WorkSpace supports the trusted, initials-based
+coordination described in [Current multi-user status](#2-current-multi-user-status).
+It does not supply organizational authentication, authorization, a
+multi-machine database, or distributed worker locking. Complete those remaining
+requirements before exposing the app beyond that one machine or treating its
+initials as verified identity.
+
+## 13. Agent completion report
 
 At the end, report:
 
@@ -406,8 +569,9 @@ Installed components:
 Python executable:
 Python package versions:
 LM Studio model:
-Service checks (1234/8787/4173):
+Service checks (1234/8787, plus 4173 only for development):
 Atlas format/feature count:
+Reviewer activity log:
 npm test:
 npm run build:
 Remaining user action:

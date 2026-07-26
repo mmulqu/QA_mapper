@@ -27,11 +27,54 @@ This is the running implementation record for the workbench. Check off a gate on
 - [x] Persist background QA batches in `.runtime\qa-batch-jobs.json`, process one local-model request at a time outside the browser request lifecycle, and recover an interrupted item after a bridge restart.
 - [x] Provide a live batch dashboard with progress, current activity, pause-after-current, resume, and cancel controls.
 - [x] Provide a review inbox that receives ready, withheld, failed, accepted, and rejected results while later batch items continue processing.
+- [x] Coordinate trusted reviewers in separate Windows sessions on one AWS
+      WorkSpace: require initials, show shared ownership and FIFO position, use
+      exclusive 60-minute review claims, reject stale decisions and duplicate
+      issue work, and keep exactly one local-model request active.
+- [x] Persist shared case follow-up conversations and append initials-attributed
+      issue, claim, prompt, revision, and decision events to
+      `.runtime\reviewer-agent-activity.jsonl`, including recovery credit when a
+      rejected proposal is revised and later accepted.
 - [x] Add a map-first QA Issue Atlas on the start page: versioned GeoJSON, lazy-loaded Leaflet rendering, red point/line/polygon evidence layers, click-to-review, exact-record queue handoff, and authoritative refresh-after-publish semantics.
+
 - [x] Run a selected QA row through the local agent, resolve its issue town through MAD community/town identifiers, and load that town's read-only vector extract.
 - [x] Reproduce the Rockport `MADV_QA_ASL_DUPES` issue at 8 Alpaca Court and stage its controlled review-only duplicate-row proposal.
 - [x] Add six reversible Rockport fault-injection scenarios across MA, AP, AV, ASL, and BRV, with immutable source data, known evaluation answers, bounded map previews, and category-memory retry support.
 - [ ] Replace the synthetic case source with a server-backed case API.
+
+## Multi-user production coordination gate
+
+This gate is for authenticated use across **several machines or service
+replicas**. The completed single-AWS-WorkSpace coordination controls above do
+not claim SSO, a transactional database, or distributed worker locking.
+
+Outcome: several authenticated reviewers can inspect and claim issues, see
+current ownership and activity, and make decisions without duplicate work or
+lost updates, while the LLM worker remains globally sequential.
+
+- [ ] Deploy one centrally reachable HTTPS API instead of a bridge bound to a
+      reviewer's loopback interface.
+- [ ] Add organizational SSO (OIDC or SAML), user identities, and reviewer/admin
+      roles.
+- [ ] Replace local JSON/CSV operational state with a transactional shared
+      database.
+- [ ] Add issue assignment with an atomic claim/lease operation, expiry, and
+      explicit release.
+- [ ] Define a stable issue key and enforce one active claim/job per issue.
+- [ ] Add idempotency keys to enqueue and decision writes.
+- [ ] Add optimistic concurrency/version checks so stale browser state cannot
+      overwrite a newer decision.
+- [ ] Enforce the global LLM concurrency limit of one with a database-backed
+      worker lease or equivalent distributed lock.
+- [ ] Show reviewer identity, claim status, job status, and recent activity to
+      all connected users in near real time.
+- [ ] Record an authenticated append-only audit trail and move generated
+      artifacts to shared durable storage.
+
+Acceptance: two reviewers on separate workstations can sign in, see the same
+issues and job state, atomically claim different work, receive a clear conflict
+when attempting the same claim or stale decision, and observe that only one LLM
+job runs at a time.
 
 ## Gate 1 — test-data sandbox
 

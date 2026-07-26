@@ -15,6 +15,10 @@ The current app focuses on the geometry-and-record inspection loop without conne
 - follow preset relations between address points, Master Address, MAD structure, structure lookup, address variants, and parcel;
 - ask a local LM Studio agent to explain the selected evidence or stage its controlled review draft;
 - watch the automatic investigation live in the center workspace, including model output and tagged on-demand skill/tool activity;
+- coordinate several trusted reviewers on one AWS WorkSpace through initials,
+  shared FIFO positions, exclusive review claims, and duplicate-work checks;
+- attribute every follow-up prompt and rejected-to-accepted proposal recovery in
+  an append-only reviewer activity log;
 - have the local agent turn rejected-proposal feedback into a structured lesson in the exact QA category's append-only reviewer memory, with the target and active authoring state visible in the UI;
 - inspect staged field changes as red/current and green/proposed values;
 - accept an eligible address-point proposal locally in the training workspace.
@@ -24,9 +28,22 @@ The current app focuses on the geometry-and-record inspection loop without conne
 
 The easiest local start is to double-click **Start MAD QA Workbench.cmd** in this folder. It starts LM Studio when needed, loads the configured local model, starts the agent bridge and app, then opens the workbench in your browser.
 
-For a new-machine install assisted by an LLM or coding agent, use [docs/AGENT_INSTALLATION_GUIDE.md](docs/AGENT_INSTALLATION_GUIDE.md). It covers dependency discovery, one-environment Python setup, LM Studio/model preparation, startup, verification, and recovery from common Windows failures.
+For a new-machine install assisted by an LLM or coding agent, use [docs/AGENT_INSTALLATION_GUIDE.md](docs/AGENT_INSTALLATION_GUIDE.md). It covers dependency discovery, the minimal pinned Python entry point in [requirements-local.txt](requirements-local.txt), one-environment setup, LM Studio/model preparation, startup, verification, and recovery from common Windows failures.
+
+> [!IMPORTANT]
+> The current release supports trusted users in separate Windows sessions on
+> one AWS WorkSpace, using one bridge and self-entered initials. It is not an
+> authenticated, multi-machine intranet service: initials are not SSO and the
+> local state requires exactly one Node process. See
+> [Current multi-user status](docs/AGENT_INSTALLATION_GUIDE.md#2-current-multi-user-status)
+> for the exact boundary and deployment runbook.
 
 Proposal events are recorded in `.runtime\proposal-history.csv`. The left-panel **Proposal audit CSV** control shows this path and, on Windows, opens the file selected in File Explorer through a fixed localhost-only action.
+
+Shared reviewer activity is appended to
+`.runtime\reviewer-agent-activity.jsonl`. It records issue ownership, claims,
+every case follow-up prompt, staged revisions, human decisions, and recovery
+credit when a rejected proposal is revised and later accepted.
 
 The local agent authors lessons from human corrections under `agent-skills\mad-qa-<category>\references\reviewer-memory.md`; they are loaded only with the matching skill. See [docs/SKILL_MEMORY.md](docs/SKILL_MEMORY.md) for the forced memory-tool turn, routing, provenance, validation, deduplication, safety, and audit behavior.
 
@@ -46,6 +63,17 @@ npm run dev
 ```
 
 Open [http://127.0.0.1:4173](http://127.0.0.1:4173).
+
+For several users on one AWS WorkSpace, run one shared service under an approved
+account and have everyone open
+[http://127.0.0.1:8787](http://127.0.0.1:8787):
+
+```powershell
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+  -File '.\scripts\start-shared-workbench.ps1' `
+  -PythonPath 'C:\absolute\path\to\python.exe' `
+  -Model 'gemma-4-e4b-it'
+```
 
 ```powershell
 npm test

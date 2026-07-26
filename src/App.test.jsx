@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
+import { REVIEWER_SESSION_STORAGE_KEY } from './lib/reviewerSession'
 
 vi.mock('./components/MapWorkspace', () => ({
   default: ({
@@ -318,6 +319,10 @@ async function selectTrainingCase(user, name = '147 Brookline Street') {
 describe('MAD QA feature explorer', () => {
   beforeEach(() => {
     window.localStorage.clear()
+    window.localStorage.setItem(REVIEWER_SESSION_STORAGE_KEY, JSON.stringify({
+      id: 'reviewer-test',
+      name: 'TR',
+    }))
     vi.stubGlobal('fetch', vi.fn((url) => {
       if (url === '/api/qa/issues') {
         return Promise.resolve({ ok: true, json: async () => qaCatalog })
@@ -330,6 +335,21 @@ describe('MAD QA feature explorer', () => {
     cleanup()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+  })
+
+  it('requires compact reviewer initials before opening the shared workbench', async () => {
+    window.localStorage.clear()
+    const user = userEvent.setup()
+    render(<App />)
+
+    expect(screen.getByRole('heading', { name: 'Identify your review session' })).toBeInTheDocument()
+    const initials = screen.getByRole('textbox', { name: 'Reviewer initials' })
+    await user.type(initials, 'm1m')
+    expect(initials).toHaveValue('MM')
+    await user.click(screen.getByRole('button', { name: 'Enter workbench' }))
+
+    expect(screen.getByRole('heading', { name: 'MAD QA' })).toBeInTheDocument()
+    expect(JSON.parse(window.localStorage.getItem(REVIEWER_SESSION_STORAGE_KEY)).name).toBe('MM')
   })
 
   it('opens on the non-zero QA queue without a dense inspector', async () => {
@@ -473,7 +493,7 @@ describe('MAD QA feature explorer', () => {
     expect(await screen.findByRole('heading', { name: 'Review inbox' })).toBeInTheDocument()
     expect(screen.getByText('Completed investigations arrive here while remaining batches continue.')).toBeInTheDocument()
     expect(screen.getByText('Delete one functionally duplicate structure lookup row.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Open review/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Claim & review/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '1 active' })).toBeInTheDocument()
   })
 

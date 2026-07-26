@@ -91,6 +91,7 @@ describe('local agent client', () => {
   it('reads model-agnostic activity and the final result from an event stream', async () => {
     const encoder = new TextEncoder()
     const chunks = [
+      'event: queue\ndata: {"id":"AGENT-1","status":"queued","queue":{"position":3,"total":4,"ahead":2}}\n\n',
       'event: activity\ndata: {"id":"reasoning-1","type":"reasoning_delta","text":"Checking rows."}\n\n',
       'event: activity\ndata: {"id":"skill-1","type":"skill","phase":"completed","name":"load_skill"}\n\n',
       'event: complete\ndata: {"reply":"Duplicate confirmed.","model":"local-model"}\n\n',
@@ -104,12 +105,18 @@ describe('local agent client', () => {
       }),
     }
     const activity = []
+    const queueUpdates = []
 
-    await expect(readAgentEventStream(response, (event) => activity.push(event))).resolves.toEqual({
+    await expect(readAgentEventStream(
+      response,
+      (event) => activity.push(event),
+      (request) => queueUpdates.push(request),
+    )).resolves.toEqual({
       reply: 'Duplicate confirmed.',
       model: 'local-model',
     })
     expect(activity.map((event) => event.type)).toEqual(['reasoning_delta', 'skill'])
+    expect(queueUpdates[0].queue).toEqual({ position: 3, total: 4, ahead: 2 })
   })
 
   it('loads a bounded QA row preview before investigating one selected record', async () => {
@@ -208,7 +215,10 @@ describe('local agent client', () => {
       result: {},
     })
 
-    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/qa/batches', { signal: undefined })
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/qa/batches', expect.objectContaining({
+      signal: undefined,
+      headers: expect.objectContaining({ 'x-mad-reviewer-id': 'reviewer-test' }),
+    }))
     expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/qa/batches', expect.objectContaining({
       method: 'POST',
       body: JSON.stringify({
@@ -217,7 +227,10 @@ describe('local agent client', () => {
         recordPrompts: { 'ROW-1': 'Check the municipal source note.' },
       }),
     }))
-    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/qa/batches/BATCH-1/pause', { method: 'POST' })
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/qa/batches/BATCH-1/pause', expect.objectContaining({
+      method: 'POST',
+      headers: expect.objectContaining({ 'x-mad-reviewer-id': 'reviewer-test' }),
+    }))
     expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/qa/batches/BATCH-1', { signal: undefined })
     expect(fetchMock).toHaveBeenNthCalledWith(5, '/api/qa/review-inbox/BATCH-1-001', { signal: undefined })
   })

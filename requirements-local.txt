@@ -1,0 +1,4 @@
+# Minimal Python entry point for the local MAD QA Workbench.
+# GeoPandas 1.1.2 declares the required pandas, Shapely, pyproj, pyogrio,
+# NumPy, and packaging dependencies used by the fixture and MassGIS tools.
+geopandas==1.1.2

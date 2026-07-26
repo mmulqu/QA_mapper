@@ -43,6 +43,22 @@ The browser receives only display-safe summaries for tools; full tool results re
 
 **Queue selected** sends up to 50 chosen QA rows to the localhost bridge. The bridge stores the job and its completed results in `.runtime\qa-batch-jobs.json`, then runs one LM Studio investigation at a time. Because the worker belongs to the bridge rather than the browser tab, the reviewer can close the browser and return later. Restarting the bridge safely returns an interrupted item to the queue.
 
+This queue is global within one running bridge. That is the supported
+coordination model for separate Windows users on one AWS WorkSpace: every
+issue investigation, case follow-up, and reviewer-memory request receives one
+persistent FIFO sequence and the worker runs exactly one request at a time.
+Each browser requires 2–6 reviewer initials, jobs show their creator, review
+items use a 60-minute exclusive claim, and stale claim versions cannot decide a
+newer result. A duplicate `(viewId, recordId)` cannot be queued while shared
+work or a decision already exists.
+
+Follow-up conversations are shared by case and show their prompt author. The
+append-only `.runtime\reviewer-agent-activity.jsonl` records exact prompts,
+claims, revisions, accept/reject decisions, and rejected-to-accepted recovery
+credit by initials. This is not authenticated identity and is not safe for
+several machines or several bridge processes. See
+[the installation guide's shared-workspace boundary](AGENT_INSTALLATION_GUIDE.md#2-current-multi-user-status).
+
 The **Batch queue** screen shows the current row, model activity, completed count, and review outcomes. A reviewer can pause a batch after its current item, resume it, or cancel the remaining work. The **Review inbox** updates while later items continue and separates:
 
 - ready proposals with changed fields;
@@ -139,6 +155,28 @@ Every staged fixture proposal receives a UUID-based `proposal-*` identifier. The
 The persistent **Proposal audit CSV** control in the app shows that relative path and opens the fixed file selected in Windows File Explorer. The localhost endpoint accepts no client-supplied path and requires the app's explicit local-action header.
 
 When a reviewer rejects a proposal, the next eligible agent draft becomes its descendant. The agent is told to read the case-scoped proposal lineage before it proposes that revision. The diff sheet displays the lineage, including the rejected parent, its feedback, and the model used for each proposal. The file is local and ignored by Git; it is a lightweight audit aid, not the eventual production audit store.
+
+## Shared reviewer activity and recovery attribution
+
+The bridge appends coordination events to
+`.runtime\reviewer-agent-activity.jsonl`. Each JSON line has a unique event ID,
+timestamp, event type, reviewer session ID, reviewer initials, and the relevant
+job, item, case, view, record, request, or proposal identifiers. Follow-up
+events retain the exact prompt text. The summary endpoint is
+`GET /api/audit/reviewer-activity`; the Batch queue displays its per-initials
+follow-up, revision, and recovery totals.
+
+A recovery is intentionally narrower than an acceptance count. It is credited
+to the initials that authored the final validated follow-up revision only when
+that same shared review item has an earlier rejection and the revision is later
+accepted. The accepting reviewer is recorded separately. Failed model calls,
+explanatory prompts without a staged draft, and accepted first proposals do not
+increase recovery credit.
+
+The JSONL file is append-only under the single bridge process, but the initials
+are self-entered and unauthenticated. Treat the ledger as a context-engineering
+and workflow measure on a trusted WorkSpace, not as personnel performance
+evidence without independent identity and governance controls.
 
 ## Verified local run
 

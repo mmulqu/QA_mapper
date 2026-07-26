@@ -19,12 +19,14 @@ import {
   Layers3,
   Link2,
   ListTodo,
+  LogOut,
   LoaderCircle,
   MapPin,
   MapPinned,
   PanelLeftClose,
   Play,
   Search,
+  UserRound,
   X,
 } from 'lucide-react'
 import AgentPanel from './components/AgentPanel'
@@ -38,6 +40,7 @@ import {
 } from './components/QaBatchOperations'
 import QaRecordPromptDialog from './components/QaRecordPromptDialog'
 import RejectDraftDialog from './components/RejectDraftDialog'
+import ReviewerLogin from './components/ReviewerLogin'
 import { MAP_SERVICES } from './config/mapServices'
 import { cases } from './data/cases'
 import { getFeatureRecords, relatedKeys } from './lib/featureRecords'
@@ -45,12 +48,12 @@ import { countChangedFields, getCaseChanges } from './lib/changeDiff'
 import { getPublicMadRecords } from './lib/publicMadRecords'
 import {
   acceptCaseDraft,
+  claimQaBatchItem,
   controlQaBatch,
   createQaBatch,
   getProposalLineage,
   getQaBatchDashboard,
   getQaBatchJob,
-  getQaBatchItem,
   getQaIssueAtlas,
   getQaIssueCatalog,
   getQaIssueRecords,
@@ -60,8 +63,14 @@ import {
   investigateQaIssue,
   refreshQaIssueAtlas,
   rejectCaseDraft,
+  releaseQaBatchItem,
   streamQaBatchJob,
 } from './lib/agentClient'
+import {
+  clearReviewerSession,
+  createReviewerSession,
+  getReviewerSession,
+} from './lib/reviewerSession'
 
 const QaIssueAtlas = lazy(() => import('./components/QaIssueAtlas'))
 
@@ -166,6 +175,8 @@ function CaseDocket({
   qaAtlasCount,
   collapsed,
   onToggle,
+  reviewer,
+  onSignOut,
 }) {
   const [openQaGroups, setOpenQaGroups] = useState(() => new Set())
 
@@ -190,6 +201,16 @@ function CaseDocket({
           <PanelLeftClose size={20} />
         </button>
       </header>
+      <div className="docket-reviewer">
+        <UserRound size={17} aria-hidden="true" />
+        <span>
+          <small>Reviewing as</small>
+          <strong>{reviewer.name}</strong>
+        </span>
+        <button type="button" onClick={onSignOut} aria-label={`Sign out ${reviewer.name}`}>
+          <LogOut size={15} aria-hidden="true" />
+        </button>
+      </div>
 
       <div className="docket-case-list">
         <nav className="docket-operations" aria-label="Batch operations">
@@ -230,7 +251,7 @@ function CaseDocket({
               <strong>Batch queue</strong>
               <small>Runs after the browser closes</small>
             </span>
-            <b>{(queueDashboard?.jobs ?? []).filter((job) => ['queued', 'running', 'paused'].includes(job.status)).length}</b>
+            <b>{queueDashboard?.agentQueue?.entries?.length ?? 0}</b>
           </button>
         </nav>
 
@@ -809,6 +830,7 @@ function QaQueueWorkspace({ issue, status, error, caseItem, onShowQaAtlas }) {
 }
 
 export default function App() {
+  const [reviewer, setReviewer] = useState(() => getReviewerSession())
   const [activeCaseId, setActiveCaseId] = useState(cases[0].id)
   const [selectedFeatureKey, setSelectedFeatureKey] = useState(null)
   const [highlightedFeatureKey, setHighlightedFeatureKey] = useState(null)
@@ -855,6 +877,7 @@ export default function App() {
   const [proposalLineages, setProposalLineages] = useState({})
   const [showRejectDialog, setShowRejectDialog] = useState(false)
   const [rejectState, setRejectState] = useState({ submitting: false, error: '' })
+  const [activeReviewClaim, setActiveReviewClaim] = useState(null)
   const qaRequestRef = useRef(null)
   const qaBatchTranscriptStreamRef = useRef(null)
   const qaBatchTranscriptRequestRef = useRef(0)
@@ -899,6 +922,7 @@ export default function App() {
   }
 
   useEffect(() => {
+    if (!reviewer) return undefined
     if (typeof globalThis.fetch !== 'function') return undefined
     let cancelled = false
 
@@ -912,7 +936,7 @@ export default function App() {
       })
 
     return () => { cancelled = true }
-  }, [])
+  }, [reviewer?.id])
 
   useEffect(() => () => qaRequestRef.current?.abort(), [])
 
@@ -927,6 +951,7 @@ export default function App() {
   }, [activeDataView])
 
   useEffect(() => {
+    if (!reviewer) return undefined
     if (typeof globalThis.fetch !== 'function') return undefined
     const controller = new AbortController()
     void refreshQaQueue({ signal: controller.signal })
@@ -937,9 +962,10 @@ export default function App() {
       controller.abort()
       globalThis.clearInterval(interval)
     }
-  }, [])
+  }, [reviewer?.id])
 
   useEffect(() => {
+    if (!reviewer) return undefined
     if (typeof globalThis.fetch !== 'function') return undefined
     let cancelled = false
     setQaCatalogStatus('loading')
@@ -958,7 +984,7 @@ export default function App() {
       })
 
     return () => { cancelled = true }
-  }, [])
+  }, [reviewer?.id])
 
   const caseItem = useMemo(
     () => activeDataView === 'qa'
@@ -1102,6 +1128,7 @@ export default function App() {
     setShowChangeDiff(false)
     setShowAgent(false)
     setShowRejectDialog(false)
+    setActiveReviewClaim(null)
   }
 
   const selectQaIssue = async (issue) => {
@@ -1202,6 +1229,7 @@ export default function App() {
       error: '',
       result,
     })
+    if (result.reviewClaim) setActiveReviewClaim(result.reviewClaim)
     if (result.draft?.changes?.length) {
       setAgentDrafts((current) => ({ ...current, [result.caseItem.id]: result.draft }))
       setReviewDecisions((current) => ({ ...current, [result.caseItem.id]: { status: 'ready' } }))
@@ -1272,6 +1300,20 @@ export default function App() {
               setQaActivity((current) => mergeAgentActivity(current, {
                 ...event,
                 id: `${row.id}:${event.id}`,
+              }))
+            },
+            onQueue: (request) => {
+              const position = request.queue
+              setQaActivity((current) => mergeAgentActivity(current, {
+                id: `${row.id}:shared-queue`,
+                type: 'status',
+                phase: position?.status === 'running' ? 'completed' : 'started',
+                title: position?.status === 'running'
+                  ? 'Your issue has the model'
+                  : `Waiting in shared queue · position ${position?.position ?? '—'} of ${position?.total ?? '—'}`,
+                detail: position?.status === 'running'
+                  ? `The global worker is running this request for ${reviewer.name}.`
+                  : `${position?.ahead ?? 0} ${(position?.ahead ?? 0) === 1 ? 'request' : 'requests'} ahead.`,
               }))
             },
           })
@@ -1518,12 +1560,18 @@ export default function App() {
     const requestController = new AbortController()
     qaRequestRef.current = requestController
     try {
-      const item = await getQaBatchItem(inboxItem.id, { signal: requestController.signal })
+      const item = await claimQaBatchItem(inboxItem.id, { signal: requestController.signal })
       if (!item.result) throw new Error('This queue item has no review result to open.')
       setActiveDataView('qa')
       setActiveQaIssue(item.result.issue)
       setQaActivity([])
       resetQaReviewWorkspace()
+      setActiveReviewClaim({
+        id: item.id,
+        claimVersion: item.claimVersion,
+        claimedBy: item.claimedBy,
+        claimExpiresAt: item.claimExpiresAt,
+      })
       await loadQaResultForReview(item.result, requestController.signal)
     } catch (error) {
       if (error.name !== 'AbortError') {
@@ -1603,12 +1651,13 @@ export default function App() {
   const acceptDraft = async () => {
     setReviewDecisions((current) => ({ ...current, [caseItem.id]: { status: 'accepting' } }))
     try {
-      const result = await acceptCaseDraft(caseItem.id)
+      const result = await acceptCaseDraft(caseItem.id, '', activeReviewClaim)
       if (result.proposals) setProposalLineages((current) => ({ ...current, [caseItem.id]: result.proposals }))
       setReviewDecisions((current) => ({
         ...current,
         [caseItem.id]: { status: 'accepted', publisher: result.publisher, job: result.job },
       }))
+      setActiveReviewClaim(null)
       void refreshQaQueue({ silent: true })
     } catch (error) {
       setReviewDecisions((current) => ({ ...current, [caseItem.id]: { status: 'ready', error: error.message } }))
@@ -1618,10 +1667,11 @@ export default function App() {
   const rejectDraft = async (comment) => {
     setRejectState({ submitting: true, error: '' })
     try {
-      const result = await rejectCaseDraft(caseItem.id, comment)
+      const result = await rejectCaseDraft(caseItem.id, comment, activeReviewClaim)
       setReviewerFeedback((current) => ({ ...current, [caseItem.id]: result.rejection }))
       if (result.proposals) setProposalLineages((current) => ({ ...current, [caseItem.id]: result.proposals }))
       setReviewDecisions((current) => ({ ...current, [caseItem.id]: { status: 'rejected' } }))
+      setActiveReviewClaim(null)
       void refreshQaQueue({ silent: true })
       setShowRejectDialog(false)
       setShowChangeDiff(false)
@@ -1631,6 +1681,17 @@ export default function App() {
       return
     }
     setRejectState({ submitting: false, error: '' })
+  }
+
+  if (!reviewer) {
+    return (
+      <ReviewerLogin
+        onLogin={(name) => {
+          const session = createReviewerSession(name)
+          setReviewer(session)
+        }}
+      />
+    )
   }
 
   return (
@@ -1655,6 +1716,20 @@ export default function App() {
           qaAtlasCount={qaAtlasState.manifest?.featureCount}
           collapsed={docketCollapsed}
           onToggle={() => setDocketCollapsed((value) => !value)}
+          reviewer={reviewer}
+          onSignOut={async () => {
+            try {
+              if (activeReviewClaim?.id) {
+                await releaseQaBatchItem(activeReviewClaim.id, activeReviewClaim.claimVersion)
+              }
+            } catch {
+              // The claim still expires automatically; sign-out must not trap the reviewer.
+            } finally {
+              setActiveReviewClaim(null)
+              clearReviewerSession()
+              setReviewer(null)
+            }
+          }}
         />
         {docketCollapsed && (
           <button
@@ -1706,6 +1781,7 @@ export default function App() {
             onControl={controlQueuedBatch}
             onShowInbox={showReviewInbox}
             onOpenTranscript={openQueuedBatchTranscript}
+            reviewer={reviewer}
           />
         ) : activeDataView === 'inbox' ? (
           <QaReviewInboxWorkspace
@@ -1715,6 +1791,7 @@ export default function App() {
             onRefresh={() => refreshQaQueue()}
             onShowQueue={showBatchQueue}
             onOpenReview={openQueuedReview}
+            reviewer={reviewer}
           />
         ) : activeDataView === 'qa' && (!caseItem || !activeTownExtract) ? (
           activeQaIssue && ['working', 'loading-town', 'error', 'stopped'].includes(qaInvestigation.status) ? (
@@ -1860,6 +1937,7 @@ export default function App() {
             decision={activeDecision}
             proposal={activeProposal}
             proposalLineage={activeProposalLineage}
+            reviewClaim={activeReviewClaim}
             onAccept={acceptDraft}
             onReject={() => {
               setRejectState({ submitting: false, error: '' })
@@ -1875,10 +1953,12 @@ export default function App() {
             initialResult={activeDataView === 'qa' ? qaInvestigation.result : null}
             runActivity={activeDataView === 'qa' ? qaActivity : []}
             automaticStatus={activeDataView === 'qa' ? qaInvestigation.status : 'idle'}
-            onDraftStaged={(draft, feedback, proposals) => {
+            reviewer={reviewer}
+            onDraftStaged={(draft, feedback, proposals, reviewClaim) => {
               setAgentDrafts((current) => ({ ...current, [caseItem.id]: draft }))
               if (feedback) setReviewerFeedback((current) => ({ ...current, [caseItem.id]: feedback }))
               if (proposals) setProposalLineages((current) => ({ ...current, [caseItem.id]: proposals }))
+              if (reviewClaim) setActiveReviewClaim(reviewClaim)
               setReviewDecisions((current) => ({ ...current, [caseItem.id]: { status: 'ready' } }))
             }}
             onReviewDraft={() => {

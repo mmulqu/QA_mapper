@@ -246,3 +246,201 @@ test('does not overwrite an unreadable persistent queue', () => {
     rmSync(directory, { recursive: true, force: true })
   }
 })
+
+test('uses one FIFO sequence for batch issues and reviewer follow-up prompts', async () => {
+  const directory = mkdtempSync(resolve(tmpdir(), 'mad-shared-agent-order-'))
+  const storagePath = resolve(directory, 'qa-batch-jobs.json')
+  const executionOrder = []
+  const queue = new QaBatchQueue({
+    storagePath,
+    model: 'test-qwen',
+    investigate: async ({ recordId }) => {
+      executionOrder.push(`issue:${recordId}`)
+      await new Promise((resolveWait) => setTimeout(resolveWait, 12))
+      return {
+        caseItem: { id: `CASE-${recordId}`, recommendation: 'Reviewed.' },
+        draft: null,
+        reply: 'Reviewed.',
+      }
+    },
+    executeRequest: async ({ prompt }) => {
+      executionOrder.push(`follow-up:${prompt}`)
+      return { reply: 'Follow-up complete.' }
+    },
+  })
+
+  try {
+    queue.create({
+      viewId: 'MADV_QA_AP_DOM_PTTYPE',
+      issue: { id: 'MADV_QA_AP_DOM_PTTYPE', description: 'Invalid point type' },
+      records: [record('ROW-1', '10 Railroad Avenue'), record('ROW-2', '12 Railroad Avenue')],
+      reviewer: { id: 'alice', name: 'Alice' },
+    })
+    const followUp = queue.createRequest({
+      kind: 'case-follow-up',
+      reviewer: { id: 'bob', name: 'Bob' },
+      caseId: 'CASE-ROW-1',
+      prompt: 'Explain the evidence.',
+      label: 'Follow-up for 10 Railroad Avenue',
+    })
+
+    assert.equal(queue.getRequest(followUp.id).queue.position, 3)
+    assert.equal(queue.getRequest(followUp.id).queue.ahead, 2)
+    await queue.waitForRequest(followUp.id)
+    assert.deepEqual(executionOrder, [
+      'issue:ROW-1',
+      'issue:ROW-2',
+      'follow-up:Explain the evidence.',
+    ])
+  } finally {
+    queue.dispose()
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('prevents duplicate issue work and enforces atomic review claims', async () => {
+  const directory = mkdtempSync(resolve(tmpdir(), 'mad-shared-review-claim-'))
+  const storagePath = resolve(directory, 'qa-batch-jobs.json')
+  const queue = new QaBatchQueue({
+    storagePath,
+    model: 'test-qwen',
+    investigate: async ({ recordId }) => ({
+      caseItem: { id: `CASE-${recordId}`, recommendation: 'Correct the row.' },
+      draft: { id: `PROPOSAL-${recordId}`, changes: [{ fields: [{ field: 'POINT_TYPE' }] }] },
+      reply: 'Proposal ready.',
+    }),
+  })
+
+  try {
+    const job = queue.create({
+      viewId: 'MADV_QA_AP_DOM_PTTYPE',
+      issue: { id: 'MADV_QA_AP_DOM_PTTYPE', description: 'Invalid point type' },
+      records: [record('ROW-1', '10 Railroad Avenue')],
+      reviewer: { id: 'alice', name: 'Alice' },
+    })
+    assert.throws(() => queue.create({
+      viewId: 'MADV_QA_AP_DOM_PTTYPE',
+      issue: { id: 'MADV_QA_AP_DOM_PTTYPE', description: 'Invalid point type' },
+      records: [record('ROW-1', '10 Railroad Avenue')],
+      reviewer: { id: 'bob', name: 'Bob' },
+    }), /already queued or waiting for review/)
+
+    await waitFor(() => queue.dashboard().inbox.counts.ready === 1)
+    const itemId = `${job.id}-001`
+    const aliceClaim = queue.claimItem(itemId, { id: 'alice', name: 'Alice' })
+    assert.equal(aliceClaim.claimedByMe, true)
+    assert.throws(
+      () => queue.claimItem(itemId, { id: 'bob', name: 'Bob' }),
+      /Alice is already reviewing this issue/,
+    )
+    assert.throws(
+      () => queue.recordCaseDecision(
+        'CASE-ROW-1',
+        'accepted',
+        { id: 'alice', name: 'Alice' },
+        { itemId, claimVersion: aliceClaim.claimVersion - 1 },
+      ),
+      /changed in another browser/,
+    )
+    queue.recordCaseDecision(
+      'CASE-ROW-1',
+      'accepted',
+      { id: 'alice', name: 'Alice' },
+      { itemId, claimVersion: aliceClaim.claimVersion },
+    )
+    const decided = queue.getItem(itemId)
+    assert.equal(decided.status, 'accepted')
+    assert.equal(decided.reviewedBy.name, 'Alice')
+  } finally {
+    queue.dispose()
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('attributes a rejected proposal recovery to the follow-up author', async () => {
+  const directory = mkdtempSync(resolve(tmpdir(), 'mad-proposal-recovery-'))
+  const storagePath = resolve(directory, 'qa-batch-jobs.json')
+  const auditEvents = []
+  let queue
+  queue = new QaBatchQueue({
+    storagePath,
+    model: 'test-qwen',
+    onAudit: (event) => auditEvents.push(event),
+    investigate: async ({ recordId }) => ({
+      caseItem: { id: `CASE-${recordId}`, recommendation: 'Correct the row.' },
+      draft: {
+        id: `PROPOSAL-${recordId}-1`,
+        validation: { passed: true },
+        changes: [{ fields: [{ field: 'POINT_TYPE' }] }],
+      },
+      reply: 'First proposal.',
+    }),
+    executeRequest: async (request) => {
+      const result = {
+        caseId: request.caseId,
+        draft: {
+          id: 'PROPOSAL-ROW-1-2',
+          validation: { passed: true },
+          changes: [{ fields: [{ field: 'POINT_TYPE' }, { field: 'STRUCTURE_' }] }],
+        },
+        reply: 'Revised proposal.',
+      }
+      const reviewClaim = queue.recordCaseFollowUpResult(
+        request.caseId,
+        result,
+        request.reviewer,
+        { requestId: request.id, prompt: request.prompt },
+      )
+      return { ...result, reviewClaim }
+    },
+  })
+
+  try {
+    const job = queue.create({
+      viewId: 'MADV_QA_AP_DOM_PTTYPE',
+      issue: { id: 'MADV_QA_AP_DOM_PTTYPE', description: 'Invalid point type' },
+      records: [record('ROW-1', '10 Railroad Avenue')],
+      reviewer: { id: 'aa-session', name: 'AA' },
+    })
+    await waitFor(() => queue.dashboard().inbox.counts.ready === 1)
+    const itemId = `${job.id}-001`
+    const firstClaim = queue.claimItem(itemId, { id: 'aa-session', name: 'AA' })
+    queue.recordCaseDecision(
+      'CASE-ROW-1',
+      'rejected',
+      { id: 'aa-session', name: 'AA' },
+      { itemId, claimVersion: firstClaim.claimVersion },
+    )
+
+    queue.reserveCaseFollowUp('CASE-ROW-1', { id: 'bb-session', name: 'BB' })
+    const followUp = queue.createRequest({
+      kind: 'case-follow-up',
+      reviewer: { id: 'bb-session', name: 'BB' },
+      caseId: 'CASE-ROW-1',
+      prompt: 'Use the relationship evidence and repair both fields.',
+    })
+    const result = await queue.waitForRequest(followUp.id)
+    assert.equal(result.reviewClaim.id, itemId)
+    assert.equal(result.reviewClaim.claimedBy.name, 'BB')
+
+    queue.releaseItem(itemId, { id: 'bb-session', name: 'BB' }, result.reviewClaim.claimVersion)
+    const finalClaim = queue.claimItem(itemId, { id: 'cc-session', name: 'CC' })
+    queue.recordCaseDecision(
+      'CASE-ROW-1',
+      'accepted',
+      { id: 'cc-session', name: 'CC' },
+      { itemId, claimVersion: finalClaim.claimVersion },
+    )
+
+    const promptEvent = auditEvents.find((event) => event.type === 'followup_prompt_queued')
+    assert.equal(promptEvent.actor.name, 'BB')
+    assert.equal(promptEvent.prompt, 'Use the relationship evidence and repair both fields.')
+    const recoveryEvent = auditEvents.find((event) => event.type === 'proposal_recovered')
+    assert.equal(recoveryEvent.actor.name, 'BB')
+    assert.equal(recoveryEvent.acceptedBy.name, 'CC')
+    assert.equal(recoveryEvent.priorRejections, 1)
+  } finally {
+    queue.dispose()
+    rmSync(directory, { recursive: true, force: true })
+  }
+})

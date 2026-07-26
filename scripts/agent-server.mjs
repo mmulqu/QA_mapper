@@ -4,12 +4,13 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import { resolve } from 'node:path'
+import { extname, resolve, sep } from 'node:path'
 import { cases } from '../src/data/cases.js'
 import { getFeatureRecords, relatedKeys } from '../src/lib/featureRecords.js'
 import { findQaIssue, loadQaCatalog } from './qa-workflow.mjs'
@@ -31,6 +32,7 @@ import {
   createQaBatchQueue,
   MAX_QA_BATCH_SIZE,
 } from './qa-batch-queue.mjs'
+import { createReviewerActivityLog } from './reviewer-activity-log.mjs'
 import {
   buildQaIssueAtlas,
   readQaIssueAtlasManifest,
@@ -57,6 +59,8 @@ const PUBLISHER_JOB_DIRECTORY = resolve(PROJECT_ROOT, '.runtime', 'mad-publisher
 const PROPOSAL_HISTORY_PATH = resolve(PROJECT_ROOT, '.runtime', 'proposal-history.csv')
 const PROPOSAL_HISTORY_RELATIVE_PATH = '.runtime\\proposal-history.csv'
 const QA_BATCH_QUEUE_PATH = resolve(PROJECT_ROOT, '.runtime', 'qa-batch-jobs.json')
+const REVIEWER_ACTIVITY_PATH = resolve(PROJECT_ROOT, '.runtime', 'reviewer-agent-activity.jsonl')
+const DIST_ROOT = resolve(PROJECT_ROOT, 'dist')
 const GEOSERVER_SKILL_DIRECTORY = resolve(SKILL_DIRECTORY, 'massgis-geoserver')
 const GEOSERVER_SCRIPT_DIRECTORY = resolve(GEOSERVER_SKILL_DIRECTORY, 'scripts')
 const GEOSERVER_EVIDENCE_DIRECTORY = resolve(PROJECT_ROOT, '.runtime', 'geoserver-evidence')
@@ -1821,11 +1825,12 @@ function agentInstructions(caseItem) {
   ].join(' ')
 }
 
-async function callLmStudio({ baseUrl, model, messages, tools, toolChoice = 'auto' }) {
+async function callLmStudio({ baseUrl, model, messages, tools, toolChoice = 'auto', signal }) {
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ model, messages, tools, tool_choice: toolChoice, temperature: 0, stream: false }),
+    signal,
   })
   const payload = await response.json().catch(() => null)
   if (!response.ok) {
@@ -1907,6 +1912,7 @@ export async function authorReviewerSkillMemory({
   model,
   proposalContext = getProposalAgentContext(draft?.id),
   requestModel = callLmStudio,
+  signal,
 }) {
   const target = getSkillMemoryTarget(caseItem)
   if (!target) throw new Error('This case is not mapped to an allow-listed QA category skill.')
@@ -1941,6 +1947,7 @@ export async function authorReviewerSkillMemory({
     messages,
     tools: [MEMORY_WRITE_TOOL],
     toolChoice: 'required',
+    signal,
   })
   const writeCalls = (message.tool_calls ?? []).filter((call) => call.function?.name === MEMORY_WRITE_TOOL_NAME)
   if (writeCalls.length !== 1) {
@@ -2353,6 +2360,43 @@ function sendJson(response, status, payload) {
   response.end(JSON.stringify(payload))
 }
 
+const STATIC_CONTENT_TYPES = {
+  '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.ico': 'image/x-icon',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
+}
+
+function sendBuiltApp(request, response, pathname) {
+  if (!['GET', 'HEAD'].includes(request.method) || !existsSync(DIST_ROOT)) return false
+  let decodedPath
+  try {
+    decodedPath = decodeURIComponent(pathname)
+  } catch {
+    return false
+  }
+  const requestedPath = decodedPath === '/' ? '/index.html' : decodedPath
+  let filePath = resolve(DIST_ROOT, `.${requestedPath}`)
+  if (filePath !== DIST_ROOT && !filePath.startsWith(`${DIST_ROOT}${sep}`)) return false
+  if (!existsSync(filePath) || !statSync(filePath).isFile()) {
+    filePath = resolve(DIST_ROOT, 'index.html')
+  }
+  const extension = extname(filePath).toLowerCase()
+  const immutable = filePath.includes(`${DIST_ROOT}${sep}assets${sep}`)
+  response.writeHead(200, {
+    'content-type': STATIC_CONTENT_TYPES[extension] || 'application/octet-stream',
+    'cache-control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache',
+  })
+  if (request.method === 'HEAD') response.end()
+  else response.end(readFileSync(filePath))
+  return true
+}
+
 function readJson(request) {
   return new Promise((resolveBody, reject) => {
     let received = 0
@@ -2376,6 +2420,26 @@ function readJson(request) {
     })
     request.on('error', reject)
   })
+}
+
+function readReviewer(request) {
+  const id = String(request.headers['x-mad-reviewer-id'] || 'local-reviewer')
+    .trim()
+    .slice(0, 120)
+  let name = 'LR'
+  try {
+    name = decodeURIComponent(String(request.headers['x-mad-reviewer-name'] || name))
+      .trim()
+      .replace(/[^a-z]/gi, '')
+      .toUpperCase()
+      .slice(0, 6)
+  } catch {
+    name = 'LR'
+  }
+  return {
+    id: id || 'local-reviewer',
+    name: /^[A-Z]{2,6}$/.test(name) ? name : 'LR',
+  }
 }
 
 async function health(baseUrl, model) {
@@ -2531,10 +2595,93 @@ function sendEventStream(response, event, payload) {
   response.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`)
 }
 
+async function streamSharedAgentRequest(response, queue, queuedRequest) {
+  startEventStream(response)
+  sendEventStream(response, 'queue', queuedRequest)
+  const unsubscribe = queue.subscribeRequest(queuedRequest.id, (event) => {
+    if (event.type === 'queue' || event.type === 'state') {
+      sendEventStream(response, 'queue', event.request)
+    }
+    if (event.type === 'activity') {
+      sendEventStream(response, 'activity', event.event)
+    }
+  })
+  const heartbeat = setInterval(() => {
+    if (!response.destroyed && !response.writableEnded) response.write(': keep-alive\n\n')
+  }, 15_000)
+  heartbeat.unref?.()
+  try {
+    const result = await queue.waitForRequest(queuedRequest.id)
+    sendEventStream(response, 'complete', result)
+  } catch (error) {
+    sendEventStream(response, 'error', {
+      message: error.message || 'The shared agent request failed.',
+    })
+  } finally {
+    clearInterval(heartbeat)
+    unsubscribe()
+    if (!response.writableEnded) response.end()
+  }
+}
+
+async function streamQueuedBatchItem(response, queue, jobId, itemId, reviewer) {
+  startEventStream(response)
+  const sendQueue = (entry) => {
+    if (!entry) return
+    sendEventStream(response, 'queue', {
+      id: entry.id,
+      kind: entry.kind,
+      status: entry.status,
+      reviewer: entry.owner,
+      queue: entry,
+    })
+  }
+  sendQueue(queue.entryForBatchItem(itemId))
+  const unsubscribe = queue.subscribe(jobId, (event) => {
+    if (event.type === 'queue' && event.itemId === itemId) {
+      sendQueue(event.queue)
+    }
+    if (event.type === 'activity' && event.itemId === itemId) {
+      sendEventStream(response, 'activity', event.event)
+    }
+    if (event.type === 'state' || event.type === 'complete') {
+      sendQueue(queue.entryForBatchItem(itemId))
+    }
+  })
+  const heartbeat = setInterval(() => {
+    if (!response.destroyed && !response.writableEnded) response.write(': keep-alive\n\n')
+  }, 15_000)
+  heartbeat.unref?.()
+  try {
+    const result = await queue.waitForBatchItem(itemId)
+    const claimed = queue.claimItem(itemId, reviewer)
+    sendEventStream(response, 'complete', {
+      ...result,
+      reviewClaim: {
+        id: claimed.id,
+        claimVersion: claimed.claimVersion,
+        claimedBy: claimed.claimedBy,
+        claimExpiresAt: claimed.claimExpiresAt,
+      },
+    })
+  } catch (error) {
+    sendEventStream(response, 'error', {
+      message: error.message || 'The queued QA investigation failed.',
+    })
+  } finally {
+    clearInterval(heartbeat)
+    unsubscribe()
+    if (!response.writableEnded) response.end()
+  }
+}
+
 export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAULT_LM_STUDIO_URL, model = process.env.LM_STUDIO_MODEL || DEFAULT_MODEL } = {}) {
-  const batchQueue = createQaBatchQueue({
+  const reviewerActivity = createReviewerActivityLog({ path: REVIEWER_ACTIVITY_PATH })
+  let batchQueue
+  batchQueue = createQaBatchQueue({
     storagePath: QA_BATCH_QUEUE_PATH,
     model,
+    onAudit: (event) => reviewerActivity.record(event),
     investigate: ({ viewId, recordId, reviewerContext, onEvent, signal }) => investigateQaCategory({
       viewId,
       recordId,
@@ -2544,6 +2691,65 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
       onEvent,
       signal,
     }),
+    executeRequest: async (request) => {
+      if (request.kind === 'qa-investigation') {
+        return investigateQaCategory({
+          viewId: request.viewId,
+          recordId: request.recordId,
+          reviewerContext: request.reviewerContext,
+          baseUrl,
+          model,
+          onEvent: request.onEvent,
+          signal: request.signal,
+        })
+      }
+      if (request.kind === 'case-follow-up') {
+        const caseItem = getCase(request.caseId)
+        if (!caseItem) throw new Error('The requested case is no longer available.')
+        const result = await runCaseAgent({
+          caseItem,
+          prompt: request.prompt,
+          baseUrl,
+          model,
+          onEvent: request.onEvent,
+          signal: request.signal,
+        })
+        const payload = {
+          caseId: caseItem.id,
+          provider: 'LM Studio',
+          model,
+          ...result,
+          proposals: getProposalLineage(caseItem.id),
+        }
+        const reviewClaim = batchQueue.recordCaseFollowUpResult(
+          caseItem.id,
+          payload,
+          request.reviewer,
+          { requestId: request.id, prompt: request.prompt },
+        )
+        return {
+          ...payload,
+          ...(reviewClaim ? { reviewClaim } : {}),
+        }
+      }
+      if (request.kind === 'review-memory') {
+        const caseItem = getCase(request.caseId)
+        if (!caseItem) throw new Error('The requested case is no longer available.')
+        return authorReviewerSkillMemory({
+          caseItem,
+          draft: request.payload.draft,
+          reviewerFeedback: request.prompt,
+          baseUrl,
+          model,
+          signal: request.signal,
+        })
+      }
+      throw new Error(`Unsupported shared agent request kind: ${request.kind}`)
+    },
+  })
+  const sharedDashboard = (reviewerId) => ({
+    ...batchQueue.dashboard(reviewerId),
+    reviewerActivity: reviewerActivity.info(),
   })
   let qaAtlasRefreshPromise = null
   const refreshQaAtlas = ({ force = false } = {}) => {
@@ -2584,10 +2790,12 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
       }
 
       if (request.method === 'GET' && url.pathname === '/api/qa/batches') {
-        return sendJson(response, 200, batchQueue.dashboard())
+        const reviewer = readReviewer(request)
+        return sendJson(response, 200, sharedDashboard(reviewer.id))
       }
 
       if (request.method === 'POST' && url.pathname === '/api/qa/batches') {
+        const reviewer = readReviewer(request)
         const body = await readJson(request)
         const viewId = typeof body.viewId === 'string' ? body.viewId.trim() : ''
         const recordIds = Array.isArray(body.recordIds)
@@ -2607,8 +2815,8 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
           })
         }
         const recordPrompts = normalizeQaRecordPrompts(body.recordPrompts, records.map((record) => record.id))
-        const job = batchQueue.create({ viewId, issue, records, recordPrompts })
-        return sendJson(response, 201, { job, dashboard: batchQueue.dashboard() })
+        const job = batchQueue.create({ viewId, issue, records, recordPrompts, reviewer })
+        return sendJson(response, 201, { job, dashboard: sharedDashboard(reviewer.id) })
       }
 
       if (
@@ -2641,22 +2849,37 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
             : sendJson(response, 404, { error: 'Unknown QA batch.' })
         }
         if (request.method === 'POST' && ['pause', 'resume', 'cancel'].includes(pathParts[4])) {
-          const job = batchQueue[pathParts[4]](jobId)
-          return sendJson(response, 200, { job, dashboard: batchQueue.dashboard() })
+          const reviewer = readReviewer(request)
+          const job = batchQueue[pathParts[4]](jobId, reviewer)
+          return sendJson(response, 200, { job, dashboard: sharedDashboard(reviewer.id) })
         }
       }
 
       if (request.method === 'GET' && url.pathname === '/api/qa/review-inbox') {
-        return sendJson(response, 200, batchQueue.dashboard().inbox)
+        const reviewer = readReviewer(request)
+        return sendJson(response, 200, sharedDashboard(reviewer.id).inbox)
       }
 
       if (
-        request.method === 'GET'
-        && pathParts[0] === 'api'
+        pathParts[0] === 'api'
         && pathParts[1] === 'qa'
         && pathParts[2] === 'review-inbox'
         && pathParts[3]
       ) {
+        if (request.method === 'POST' && pathParts[4] === 'claim') {
+          const reviewer = readReviewer(request)
+          return sendJson(response, 200, { item: batchQueue.claimItem(pathParts[3], reviewer) })
+        }
+        if (request.method === 'POST' && pathParts[4] === 'release') {
+          const reviewer = readReviewer(request)
+          const body = await readJson(request)
+          return sendJson(response, 200, {
+            item: batchQueue.releaseItem(pathParts[3], reviewer, body.claimVersion),
+          })
+        }
+        if (request.method !== 'GET' || pathParts[4]) {
+          return sendJson(response, 404, { error: 'Not found.' })
+        }
         const item = batchQueue.getItem(pathParts[3])
         return item
           ? sendJson(response, 200, { item })
@@ -2692,6 +2915,10 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
         return sendJson(response, 200, getProposalAuditInfo())
       }
 
+      if (request.method === 'GET' && url.pathname === '/api/audit/reviewer-activity') {
+        return sendJson(response, 200, reviewerActivity.info())
+      }
+
       if (request.method === 'POST' && url.pathname === '/api/audit/proposal-history/open') {
         if (request.headers['x-mad-local-action'] !== 'open-proposal-audit') {
           return sendJson(response, 403, { error: 'The local audit action header is required.' })
@@ -2707,42 +2934,19 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
         && pathParts[3]
         && pathParts[4] === 'investigate-stream'
       ) {
+        const reviewer = readReviewer(request)
         const body = await readJson(request)
-        startEventStream(response)
-        const abortController = new AbortController()
-        response.on('close', () => abortController.abort())
-        const heartbeat = setInterval(() => {
-          if (!response.destroyed && !response.writableEnded) response.write(': keep-alive\n\n')
-        }, 15_000)
-        try {
-          sendEventStream(response, 'activity', {
-            id: 'session',
-            type: 'status',
-            phase: 'started',
-            title: 'Local agent connected',
-            detail: model,
-            model,
-          })
-          const result = await investigateQaCategory({
-            viewId: pathParts[3],
-            recordId: body.recordId,
-            reviewerContext: normalizeQaRecordContext(body.reviewerContext),
-            baseUrl,
-            model,
-            onEvent: (event) => sendEventStream(response, 'activity', event),
-            signal: abortController.signal,
-          })
-          sendEventStream(response, 'complete', result)
-        } catch (error) {
-          if (error.name !== 'AbortError') {
-            sendEventStream(response, 'error', {
-              message: error.message || 'Local agent request failed.',
-            })
-          }
-        } finally {
-          clearInterval(heartbeat)
-          if (!response.writableEnded) response.end()
-        }
+        const { issue, page } = await loadQaIssueContext(pathParts[3])
+        const record = page.rows.find((candidate) => candidate.id === body.recordId)
+        if (!record) return sendJson(response, 404, { error: 'The selected QA row is not available.' })
+        const job = batchQueue.create({
+          viewId: pathParts[3],
+          issue,
+          records: [record],
+          recordPrompts: { [record.id]: normalizeQaRecordContext(body.reviewerContext) },
+          reviewer,
+        })
+        await streamQueuedBatchItem(response, batchQueue, job.id, `${job.id}-001`, reviewer)
         return undefined
       }
 
@@ -2754,14 +2958,30 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
         && pathParts[3]
         && pathParts[4] === 'investigate'
       ) {
+        const reviewer = readReviewer(request)
         const body = await readJson(request)
-        return sendJson(response, 200, await investigateQaCategory({
+        const { issue, page } = await loadQaIssueContext(pathParts[3])
+        const record = page.rows.find((candidate) => candidate.id === body.recordId)
+        if (!record) return sendJson(response, 404, { error: 'The selected QA row is not available.' })
+        const job = batchQueue.create({
           viewId: pathParts[3],
-          recordId: body.recordId,
-          reviewerContext: normalizeQaRecordContext(body.reviewerContext),
-          baseUrl,
-          model,
-        }))
+          issue,
+          records: [record],
+          recordPrompts: { [record.id]: normalizeQaRecordContext(body.reviewerContext) },
+          reviewer,
+        })
+        const itemId = `${job.id}-001`
+        const result = await batchQueue.waitForBatchItem(itemId)
+        const claimed = batchQueue.claimItem(itemId, reviewer)
+        return sendJson(response, 200, {
+          ...result,
+          reviewClaim: {
+            id: claimed.id,
+            claimVersion: claimed.claimVersion,
+            claimedBy: claimed.claimedBy,
+            claimExpiresAt: claimed.claimExpiresAt,
+          },
+        })
       }
 
       if (
@@ -2799,6 +3019,13 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
           return sendJson(response, 200, { caseId: caseItem.id, proposals: getProposalLineage(caseItem.id) })
         }
 
+        if (request.method === 'GET' && pathParts[3] === 'conversation') {
+          return sendJson(response, 200, {
+            caseId: caseItem.id,
+            messages: batchQueue.getConversation(caseItem.id),
+          })
+        }
+
         if (request.method === 'POST' && pathParts[3] === 'reset-draft') {
           const draft = stagedDrafts.get(caseItem.id)
           if (draft?.id) proposalAgentContexts.delete(draft.id)
@@ -2808,6 +3035,7 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
         }
 
         if (request.method === 'POST' && pathParts[3] === 'reject') {
+          const reviewer = readReviewer(request)
           const body = await readJson(request)
           const comment = typeof body.comment === 'string' ? body.comment.trim() : ''
           if (comment.length < 5 || comment.length > MAX_REVIEWER_COMMENT) {
@@ -2815,19 +3043,27 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
               error: `Describe what needs to change in 5 to ${MAX_REVIEWER_COMMENT} characters.`,
             })
           }
+          const reviewClaim = {
+            itemId: body.reviewItemId,
+            claimVersion: body.claimVersion,
+          }
+          batchQueue.requireCaseClaim(caseItem.id, reviewer, reviewClaim)
 
           const draft = stagedDrafts.get(caseItem.id) ?? stageFixtureProposal(
             caseItem,
             'Baseline fixture proposal recorded for reviewer feedback.',
             { summary: caseItem.recommendation, category: caseItem.issueType, model },
           )
-          const authoredMemory = await authorReviewerSkillMemory({
-            caseItem,
-            draft,
-            reviewerFeedback: comment,
-            baseUrl,
-            model,
+          const memoryRequest = batchQueue.createRequest({
+            kind: 'review-memory',
+            reviewer,
+            caseId: caseItem.id,
+            prompt: comment,
+            payload: { draft },
+            label: `Record reviewer feedback for ${caseItem.address}`,
+            detail: caseItem.issueType,
           })
+          const authoredMemory = await batchQueue.waitForRequest(memoryRequest.id)
           const feedback = recordReviewerRejection(caseItem, draft, comment, { persist: true })
           const memoryUpdate = appendReviewerSkillMemory({
             caseItem,
@@ -2839,7 +3075,7 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
           })
           const rejection = { ...feedback, memoryUpdate }
           reviewerFeedback.set(caseItem.id, rejection)
-          batchQueue.recordCaseDecision(caseItem.id, 'rejected')
+          batchQueue.recordCaseDecision(caseItem.id, 'rejected', reviewer, reviewClaim)
           return sendJson(response, 200, {
             caseId: caseItem.id,
             rejection,
@@ -2852,6 +3088,7 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
         }
 
         if (request.method === 'POST' && pathParts[3] === 'accept') {
+          const reviewer = readReviewer(request)
           if (caseItem.publishEligible === false) {
             return sendJson(response, 409, {
               error: caseItem.publishBlocker || 'This proposal is review-only and cannot be published.',
@@ -2865,6 +3102,11 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
           }
 
           const body = await readJson(request)
+          const reviewClaim = {
+            itemId: body.reviewItemId,
+            claimVersion: body.claimVersion,
+          }
+          batchQueue.requireCaseClaim(caseItem.id, reviewer, reviewClaim)
           const reviewerNote = typeof body.reviewerNote === 'string' ? body.reviewerNote.trim() : ''
           if (reviewerNote.length > MAX_REVIEWER_COMMENT) {
             return sendJson(response, 400, { error: `Reviewer note must be ${MAX_REVIEWER_COMMENT} characters or fewer.` })
@@ -2883,7 +3125,7 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
           recordProposalAcceptance(caseItem, draft)
           const handoffPath = persistPublisherHandoff(handoff)
           const publisher = await validatePublisherHandoff(handoffPath, getPublisherMode())
-          batchQueue.recordCaseDecision(caseItem.id, 'accepted')
+          batchQueue.recordCaseDecision(caseItem.id, 'accepted', reviewer, reviewClaim)
           return sendJson(response, 200, {
             caseId: caseItem.id,
             approval: handoff.decision,
@@ -2894,11 +3136,25 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
         }
 
         if (request.method === 'POST' && pathParts[3] === 'agent') {
+          const reviewer = readReviewer(request)
           const body = await readJson(request)
           const prompt = typeof body.message === 'string' ? body.message.trim() : ''
           if (!prompt) return sendJson(response, 400, { error: 'A non-empty message is required.' })
-
-          const result = await runCaseAgent({ caseItem, prompt, baseUrl, model })
+          const reviewReservation = batchQueue.reserveCaseFollowUp(caseItem.id, reviewer)
+          const queuedRequest = batchQueue.createRequest({
+            kind: 'case-follow-up',
+            reviewer,
+            caseId: caseItem.id,
+            prompt,
+            payload: { reviewReservation },
+            label: `Follow-up for ${caseItem.address}`,
+            detail: compactText(prompt, 180),
+          })
+          if (String(request.headers.accept || '').includes('text/event-stream')) {
+            await streamSharedAgentRequest(response, batchQueue, queuedRequest)
+            return undefined
+          }
+          const result = await batchQueue.waitForRequest(queuedRequest.id)
           return sendJson(response, 200, {
             caseId: caseItem.id,
             provider: 'LM Studio',
@@ -2909,6 +3165,9 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
         }
       }
 
+      if (!url.pathname.startsWith('/api/') && sendBuiltApp(request, response, url.pathname)) {
+        return undefined
+      }
       return sendJson(response, 404, { error: 'Not found.' })
     } catch (error) {
       return sendJson(response, error.statusCode || 502, { error: error.message || 'Local agent request failed.' })
@@ -2924,6 +3183,9 @@ export function startAgentServer(options = {}) {
   const server = createAgentServer(options)
   server.listen(port, host, () => {
     console.log(`MAD local agent bridge listening at http://${host}:${port}`)
+    if (existsSync(resolve(DIST_ROOT, 'index.html'))) {
+      console.log(`MAD QA shared workbench available at http://${host}:${port}`)
+    }
   })
   return server
 }
