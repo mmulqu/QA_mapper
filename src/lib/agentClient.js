@@ -59,6 +59,41 @@ export async function getQaIssueRecords(viewId, { signal } = {}) {
   return payload
 }
 
+export async function getQaBatchDashboard({ signal } = {}) {
+  const response = await fetch('/api/qa/batches', { signal })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || 'The persistent QA batch queue could not be loaded.')
+  return payload
+}
+
+export async function createQaBatch(viewId, recordIds) {
+  const response = await fetch('/api/qa/batches', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ viewId, recordIds }),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || 'The selected QA rows could not be queued.')
+  return payload
+}
+
+export async function controlQaBatch(jobId, action) {
+  const response = await fetch(
+    `/api/qa/batches/${encodeURIComponent(jobId)}/${encodeURIComponent(action)}`,
+    { method: 'POST' },
+  )
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || 'The QA batch action could not be completed.')
+  return payload
+}
+
+export async function getQaBatchItem(itemId, { signal } = {}) {
+  const response = await fetch(`/api/qa/review-inbox/${encodeURIComponent(itemId)}`, { signal })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || 'The queued QA result could not be opened.')
+  return payload.item
+}
+
 export async function getQaRecordMapPreview(viewId, recordId, { signal } = {}) {
   const response = await fetch(
     `/api/qa/issues/${encodeURIComponent(viewId)}/records/${encodeURIComponent(recordId)}/map-preview`,

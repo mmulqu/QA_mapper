@@ -20,9 +20,12 @@ This is the running implementation record for the workbench. Check off a gate on
 - [x] Public MassGIS basemap and 2025 natural-color imagery tile services in Leaflet.
 - [x] Case-scoped agent map-evidence tool that fits and highlights an address point, structure, or road segment over either MassGIS background, saves an auditable PNG, and attaches it to vision-capable LM Studio models through a model-name-agnostic message contract.
 - [x] Parse the supplied daily QA report into data-category buckets and show only non-zero checks.
-- [x] Preview record-level rows for a selected QA category, label mock versus fixture evidence, and run only a reviewer-selected batch of up to 10 rows.
+- [x] Preview record-level rows for a selected QA category, label mock versus fixture evidence, and run or queue only a reviewer-selected batch of up to 50 rows.
 - [x] Let reviewers open an issue row on the map before running the agent, using direct issue geometry or an explicit category-to-feature relationship and a bounded AOI extract.
 - [x] Process selected rows sequentially with a visible Stop action that aborts the active LM Studio stream and leaves remaining rows unrun.
+- [x] Persist background QA batches in `.runtime\qa-batch-jobs.json`, process one local-model request at a time outside the browser request lifecycle, and recover an interrupted item after a bridge restart.
+- [x] Provide a live batch dashboard with progress, current activity, pause-after-current, resume, and cancel controls.
+- [x] Provide a review inbox that receives ready, withheld, failed, accepted, and rejected results while later batch items continue processing.
 - [x] Run a selected QA row through the local agent, resolve its issue town through MAD community/town identifiers, and load that town's read-only vector extract.
 - [x] Reproduce the Rockport `MADV_QA_ASL_DUPES` issue at 8 Alpaca Court and stage its controlled review-only duplicate-row proposal.
 - [x] Add six reversible Rockport fault-injection scenarios across MA, AP, AV, ASL, and BRV, with immutable source data, known evaluation answers, bounded map previews, and category-memory retry support.
@@ -81,9 +84,11 @@ The public point export is valuable for browser/display and metadata testing, bu
 - [x] Add the production-facing endpoint shape for category investigation and town-extract loading.
 - [x] Implement one local record-level view adapter for `MADV_QA_ASL_DUPES`.
 - [x] Add a bounded issue-row preview and explicit reviewer selection; current non-ASL rows are clearly labeled mock records for workflow testing.
+- [x] Add a localhost-owned persistent batch queue for up to 50 selected rows, with sequential execution and stored review results that survive browser closure.
+- [x] Add a review inbox that can reopen a completed queued result in the existing town-map, evidence, and red/green diff workflow.
 - [x] Define geometry-resolution contracts for all current QA data categories, including `BASE_RANGE_VARIANT.BASE_SEGMENT_ID → BASE_STREET_ARC.BASE_SEGMENT_ID` for BRV issues.
 - [x] Add a pre-agent map-preview endpoint for the local Rockport ASL fixture with a 120-meter AOI, five relevant layers, and hard limits of 50 features per layer and 200 total.
-- [ ] Replace the 12-row mock preview with server-side paging, filtering, assignment, and stable row IDs from the approved SQL view.
+- [ ] Replace the 50-row mock preview with server-side paging, filtering, assignment, and stable row IDs from the approved SQL view.
 - [ ] Populate each production QA row with direct geometry or the stable relationship keys required by its category's geometry-resolution contract.
 - [ ] Replace the report-file parser and single-view local adapter with the approved QA SQL view connection.
 

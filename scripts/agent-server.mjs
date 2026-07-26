@@ -22,6 +22,10 @@ import {
   getCaseRelationshipClosure,
 } from './qa-decision-tools.mjs'
 import {
+  createQaBatchQueue,
+  MAX_QA_BATCH_SIZE,
+} from './qa-batch-queue.mjs'
+import {
   appendReviewerSkillMemory,
   getSkillMemoryTarget,
   QA_CATEGORY_SKILLS,
@@ -41,6 +45,7 @@ const PUBLISHER_SCRIPT = resolve(PROJECT_ROOT, 'scripts', 'arcpy_publish.py')
 const PUBLISHER_JOB_DIRECTORY = resolve(PROJECT_ROOT, '.runtime', 'mad-publisher-jobs')
 const PROPOSAL_HISTORY_PATH = resolve(PROJECT_ROOT, '.runtime', 'proposal-history.csv')
 const PROPOSAL_HISTORY_RELATIVE_PATH = '.runtime\\proposal-history.csv'
+const QA_BATCH_QUEUE_PATH = resolve(PROJECT_ROOT, '.runtime', 'qa-batch-jobs.json')
 const GEOSERVER_SKILL_DIRECTORY = resolve(SKILL_DIRECTORY, 'massgis-geoserver')
 const GEOSERVER_SCRIPT_DIRECTORY = resolve(GEOSERVER_SKILL_DIRECTORY, 'scripts')
 const GEOSERVER_EVIDENCE_DIRECTORY = resolve(PROJECT_ROOT, '.runtime', 'geoserver-evidence')
@@ -2470,7 +2475,19 @@ function sendEventStream(response, event, payload) {
 }
 
 export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAULT_LM_STUDIO_URL, model = process.env.LM_STUDIO_MODEL || DEFAULT_MODEL } = {}) {
-  return createServer(async (request, response) => {
+  const batchQueue = createQaBatchQueue({
+    storagePath: QA_BATCH_QUEUE_PATH,
+    model,
+    investigate: ({ viewId, recordId, onEvent, signal }) => investigateQaCategory({
+      viewId,
+      recordId,
+      baseUrl,
+      model,
+      onEvent,
+      signal,
+    }),
+  })
+  const server = createServer(async (request, response) => {
     const url = new URL(request.url, `http://${request.headers.host || '127.0.0.1'}`)
     const pathParts = url.pathname.split('/').filter(Boolean)
 
@@ -2485,6 +2502,69 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
 
       if (request.method === 'GET' && url.pathname === '/api/qa/issues') {
         return sendJson(response, 200, loadQaCatalog())
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/qa/batches') {
+        return sendJson(response, 200, batchQueue.dashboard())
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/qa/batches') {
+        const body = await readJson(request)
+        const viewId = typeof body.viewId === 'string' ? body.viewId.trim() : ''
+        const recordIds = Array.isArray(body.recordIds)
+          ? body.recordIds.filter((recordId) => typeof recordId === 'string' && recordId.trim())
+          : []
+        if (!viewId || !recordIds.length || recordIds.length > MAX_QA_BATCH_SIZE) {
+          return sendJson(response, 400, {
+            error: `Choose a QA view and between 1 and ${MAX_QA_BATCH_SIZE} issue rows.`,
+          })
+        }
+        const { issue, page } = await loadQaIssueContext(viewId)
+        const requested = new Set(recordIds)
+        const records = page.rows.filter((record) => requested.has(record.id))
+        if (records.length !== requested.size) {
+          return sendJson(response, 400, {
+            error: 'One or more selected QA rows are not available in the bounded issue page.',
+          })
+        }
+        const job = batchQueue.create({ viewId, issue, records })
+        return sendJson(response, 201, { job, dashboard: batchQueue.dashboard() })
+      }
+
+      if (
+        pathParts[0] === 'api'
+        && pathParts[1] === 'qa'
+        && pathParts[2] === 'batches'
+        && pathParts[3]
+      ) {
+        const jobId = pathParts[3]
+        if (request.method === 'GET' && !pathParts[4]) {
+          const job = batchQueue.getJob(jobId)
+          return job
+            ? sendJson(response, 200, { job })
+            : sendJson(response, 404, { error: 'Unknown QA batch.' })
+        }
+        if (request.method === 'POST' && ['pause', 'resume', 'cancel'].includes(pathParts[4])) {
+          const job = batchQueue[pathParts[4]](jobId)
+          return sendJson(response, 200, { job, dashboard: batchQueue.dashboard() })
+        }
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/qa/review-inbox') {
+        return sendJson(response, 200, batchQueue.dashboard().inbox)
+      }
+
+      if (
+        request.method === 'GET'
+        && pathParts[0] === 'api'
+        && pathParts[1] === 'qa'
+        && pathParts[2] === 'review-inbox'
+        && pathParts[3]
+      ) {
+        const item = batchQueue.getItem(pathParts[3])
+        return item
+          ? sendJson(response, 200, { item })
+          : sendJson(response, 404, { error: 'Unknown queued QA result.' })
       }
 
       if (
@@ -2661,6 +2741,7 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
           })
           const rejection = { ...feedback, memoryUpdate }
           reviewerFeedback.set(caseItem.id, rejection)
+          batchQueue.recordCaseDecision(caseItem.id, 'rejected')
           return sendJson(response, 200, {
             caseId: caseItem.id,
             rejection,
@@ -2704,6 +2785,7 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
           recordProposalAcceptance(caseItem, draft)
           const handoffPath = persistPublisherHandoff(handoff)
           const publisher = await validatePublisherHandoff(handoffPath, getPublisherMode())
+          batchQueue.recordCaseDecision(caseItem.id, 'accepted')
           return sendJson(response, 200, {
             caseId: caseItem.id,
             approval: handoff.decision,
@@ -2734,6 +2816,8 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
       return sendJson(response, 502, { error: error.message || 'Local agent request failed.' })
     }
   })
+  server.on('close', () => batchQueue.dispose())
+  return server
 }
 
 export function startAgentServer(options = {}) {

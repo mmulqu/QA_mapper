@@ -1,7 +1,7 @@
 import { buildQaMapPreviewDescriptor } from './qa-map-relations.mjs'
 
-const DEFAULT_PREVIEW_SIZE = 12
-export const QA_SELECTION_LIMIT = 10
+const DEFAULT_PREVIEW_SIZE = 50
+export const QA_SELECTION_LIMIT = 50
 
 const MOCK_ROWS = [
   { address: '12 TEST STREET', municipality: 'BOSTON', recordId: 'MOCK-MA-000012' },

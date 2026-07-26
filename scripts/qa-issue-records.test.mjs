@@ -22,7 +22,7 @@ test('builds a bounded QA preview without treating the statewide count as a work
   const page = buildQaIssueRecordPage(issue, [realCase])
 
   assert.equal(page.statewideCount, 1716)
-  assert.equal(page.loadedCount, 12)
+  assert.equal(page.loadedCount, 50)
   assert.equal(page.hasMore, true)
   assert.equal(page.selectionLimit, QA_SELECTION_LIMIT)
   assert.equal(page.rows[0].mock, false)

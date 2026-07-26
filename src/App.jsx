@@ -1,8 +1,8 @@
 /*
-THESIS: A reviewer should be able to map a QA row before invoking an agent, then inspect its MAD features and known relationships.
+THESIS: A reviewer should be able to send bounded QA rows to a durable local-agent queue, return to a review inbox, and verify each proposal against the map.
 OWN-WORLD: Survey evidence dossier—cool drafting paper, blueprint ink, simple vectors, and full-size usable type.
-STORY: Choose a QA check, preview one bounded row on the map, inspect attributes and relates, then decide whether the agent should run.
-FIRST VIEWPORT: A permanent left QA docket and one large Leaflet workspace; row selection precedes a bounded pre-agent map.
+STORY: Choose a QA check, preview or queue selected rows, then open completed work to inspect its attributes, relates, evidence, and diff.
+FIRST VIEWPORT: A permanent left QA docket with inbox and queue status beside one large Leaflet or review workspace.
 FORM: Map-first feature explorer with progressive disclosure; no persistent evidence folio.
 */
 
@@ -14,8 +14,10 @@ import {
   CircleDot,
   Database,
   FileText,
+  Inbox,
   Layers3,
   Link2,
+  ListTodo,
   LoaderCircle,
   MapPin,
   MapPinned,
@@ -29,6 +31,10 @@ import AgentActivityStream from './components/AgentActivityStream'
 import ChangeDiffInspector from './components/ChangeDiffInspector'
 import MapWorkspace from './components/MapWorkspace'
 import ProposalAuditControl from './components/ProposalAuditControl'
+import {
+  QaBatchQueueWorkspace,
+  QaReviewInboxWorkspace,
+} from './components/QaBatchOperations'
 import RejectDraftDialog from './components/RejectDraftDialog'
 import { MAP_SERVICES } from './config/mapServices'
 import { cases } from './data/cases'
@@ -37,7 +43,11 @@ import { countChangedFields, getCaseChanges } from './lib/changeDiff'
 import { getPublicMadRecords } from './lib/publicMadRecords'
 import {
   acceptCaseDraft,
+  controlQaBatch,
+  createQaBatch,
   getProposalLineage,
+  getQaBatchDashboard,
+  getQaBatchItem,
   getQaIssueCatalog,
   getQaIssueRecords,
   getQaRecordMapPreview,
@@ -131,6 +141,9 @@ function CaseDocket({
   onSelectCase,
   onSelectPublicSnapshot,
   publicSnapshot,
+  queueDashboard,
+  onShowBatchQueue,
+  onShowReviewInbox,
   collapsed,
   onToggle,
 }) {
@@ -159,6 +172,35 @@ function CaseDocket({
       </header>
 
       <div className="docket-case-list">
+        <nav className="docket-operations" aria-label="Batch operations">
+          <button
+            type="button"
+            className={activeDataView === 'inbox' ? 'active' : undefined}
+            onClick={onShowReviewInbox}
+            aria-current={activeDataView === 'inbox' ? 'page' : undefined}
+          >
+            <Inbox size={19} />
+            <span>
+              <strong>Review inbox</strong>
+              <small>Completed agent results</small>
+            </span>
+            <b>{queueDashboard?.inbox?.counts?.ready ?? 0}</b>
+          </button>
+          <button
+            type="button"
+            className={activeDataView === 'queue' ? 'active' : undefined}
+            onClick={onShowBatchQueue}
+            aria-current={activeDataView === 'queue' ? 'page' : undefined}
+          >
+            <ListTodo size={19} />
+            <span>
+              <strong>Batch queue</strong>
+              <small>Runs after the browser closes</small>
+            </span>
+            <b>{(queueDashboard?.jobs ?? []).filter((job) => ['queued', 'running', 'paused'].includes(job.status)).length}</b>
+          </button>
+        </nav>
+
         <section className="qa-queue" aria-labelledby="qa-queue-heading">
           <header className="qa-queue-header">
             <div>
@@ -295,9 +337,13 @@ function CaseDocket({
           <span>
             {activeDataView === 'qa'
               ? 'QA report · town extracts are read-only'
-              : activeDataView === 'public'
-                ? 'Public export · no edit actions'
-                : 'Training workspace · vector export'}
+              : activeDataView === 'queue'
+                ? 'Persistent local queue · concurrency 1'
+                : activeDataView === 'inbox'
+                  ? 'Human review inbox · no auto-accept'
+                  : activeDataView === 'public'
+                    ? 'Public export · no edit actions'
+                    : 'Training workspace · vector export'}
           </span>
         </div>
         <ProposalAuditControl />
@@ -440,6 +486,8 @@ function QaIssueSelector({
   onSelectPreview,
   onClear,
   onRun,
+  onQueue,
+  queueSubmitting,
   onRetry,
 }) {
   const loading = status === 'loading-records'
@@ -592,12 +640,20 @@ function QaIssueSelector({
 
             <footer className="qa-record-footer">
               <span>
-                The agent will process selected rows one at a time. Stop cancels the current row and leaves the rest unrun.
+                Queue work runs one row at a time in the local bridge and continues if this browser closes.
               </span>
-              <button type="button" className="qa-run-button" onClick={onRun} disabled={!selectedCount}>
-                <Play size={17} fill="currentColor" aria-hidden="true" />
-                Run {selectedCount || ''} selected
-              </button>
+              <div className="qa-record-submit-actions">
+                <button type="button" onClick={onRun} disabled={!selectedCount || queueSubmitting}>
+                  <Play size={16} fill="currentColor" aria-hidden="true" />
+                  Run {selectedCount || ''} selected
+                </button>
+                <button type="button" className="qa-run-button" onClick={onQueue} disabled={!selectedCount || queueSubmitting}>
+                  {queueSubmitting
+                    ? <LoaderCircle className="agent-spinner" size={17} />
+                    : <ListTodo size={17} aria-hidden="true" />}
+                  {queueSubmitting ? 'Sending batch…' : `Queue ${selectedCount || ''} selected`}
+                </button>
+              </div>
             </footer>
           </>
         ) : null}
@@ -717,6 +773,8 @@ export default function App() {
   const [qaMapPreview, setQaMapPreview] = useState({ status: 'idle', error: '', record: null, result: null })
   const [selectedQaRecordIds, setSelectedQaRecordIds] = useState([])
   const [qaBatch, setQaBatch] = useState({ status: 'idle', currentIndex: 0, total: 0, results: [] })
+  const [qaQueueState, setQaQueueState] = useState({ status: 'loading', error: '', dashboard: null })
+  const [queueSubmitting, setQueueSubmitting] = useState(false)
   const [qaCase, setQaCase] = useState(null)
   const [qaInvestigation, setQaInvestigation] = useState({ status: 'idle', error: '', result: null })
   const [qaActivity, setQaActivity] = useState([])
@@ -733,6 +791,25 @@ export default function App() {
   const [showRejectDialog, setShowRejectDialog] = useState(false)
   const [rejectState, setRejectState] = useState({ submitting: false, error: '' })
   const qaRequestRef = useRef(null)
+
+  const refreshQaQueue = async ({ silent = false, signal } = {}) => {
+    if (!silent) {
+      setQaQueueState((current) => ({ ...current, status: 'loading', error: '' }))
+    }
+    try {
+      const dashboard = await getQaBatchDashboard({ signal })
+      setQaQueueState({ status: 'ready', error: '', dashboard })
+      return dashboard
+    } catch (error) {
+      if (error.name === 'AbortError') return null
+      setQaQueueState((current) => ({
+        ...current,
+        status: 'error',
+        error: error.message,
+      }))
+      return null
+    }
+  }
 
   useEffect(() => {
     if (typeof globalThis.fetch !== 'function') return undefined
@@ -751,6 +828,19 @@ export default function App() {
   }, [])
 
   useEffect(() => () => qaRequestRef.current?.abort(), [])
+
+  useEffect(() => {
+    if (typeof globalThis.fetch !== 'function') return undefined
+    const controller = new AbortController()
+    void refreshQaQueue({ signal: controller.signal })
+    const interval = globalThis.setInterval(() => {
+      void refreshQaQueue({ silent: true, signal: controller.signal })
+    }, 3000)
+    return () => {
+      controller.abort()
+      globalThis.clearInterval(interval)
+    }
+  }, [])
 
   useEffect(() => {
     if (typeof globalThis.fetch !== 'function') return undefined
@@ -1118,6 +1208,76 @@ export default function App() {
     }
   }
 
+  const queueSelectedQaRecords = async (recordIdsOverride = null) => {
+    const page = qaIssueRecords.page
+    if (!page || !activeQaIssue) return
+    const recordIds = Array.isArray(recordIdsOverride) ? recordIdsOverride : selectedQaRecordIds
+    if (!recordIds.length) return
+    setQueueSubmitting(true)
+    try {
+      const payload = await createQaBatch(activeQaIssue.id, recordIds)
+      setQaQueueState({ status: 'ready', error: '', dashboard: payload.dashboard })
+      resetQaReviewWorkspace()
+      setActiveDataView('queue')
+      setDocketCollapsed(false)
+    } catch (error) {
+      setQaQueueState((current) => ({ ...current, status: 'error', error: error.message }))
+    } finally {
+      setQueueSubmitting(false)
+    }
+  }
+
+  const showBatchQueue = () => {
+    setActiveDataView('queue')
+    clearFeatureSelection()
+    setShowChangeDiff(false)
+    setShowAgent(false)
+    setShowRejectDialog(false)
+    setDocketCollapsed(false)
+    void refreshQaQueue({ silent: true })
+  }
+
+  const showReviewInbox = () => {
+    setActiveDataView('inbox')
+    clearFeatureSelection()
+    setShowChangeDiff(false)
+    setShowAgent(false)
+    setShowRejectDialog(false)
+    setDocketCollapsed(false)
+    void refreshQaQueue({ silent: true })
+  }
+
+  const controlQueuedBatch = async (jobId, action) => {
+    try {
+      const payload = await controlQaBatch(jobId, action)
+      setQaQueueState({ status: 'ready', error: '', dashboard: payload.dashboard })
+    } catch (error) {
+      setQaQueueState((current) => ({ ...current, status: 'error', error: error.message }))
+    }
+  }
+
+  const openQueuedReview = async (inboxItem) => {
+    qaRequestRef.current?.abort()
+    const requestController = new AbortController()
+    qaRequestRef.current = requestController
+    try {
+      const item = await getQaBatchItem(inboxItem.id, { signal: requestController.signal })
+      if (!item.result) throw new Error('This queue item has no review result to open.')
+      setActiveDataView('qa')
+      setActiveQaIssue(item.result.issue)
+      setQaActivity([])
+      resetQaReviewWorkspace()
+      await loadQaResultForReview(item.result, requestController.signal)
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        setQaQueueState((current) => ({ ...current, status: 'error', error: error.message }))
+        setActiveDataView('inbox')
+      }
+    } finally {
+      if (qaRequestRef.current === requestController) qaRequestRef.current = null
+    }
+  }
+
   const stopQaInvestigation = () => {
     if (!qaRequestRef.current) return
     qaRequestRef.current.abort()
@@ -1192,6 +1352,7 @@ export default function App() {
         ...current,
         [caseItem.id]: { status: 'accepted', publisher: result.publisher, job: result.job },
       }))
+      void refreshQaQueue({ silent: true })
     } catch (error) {
       setReviewDecisions((current) => ({ ...current, [caseItem.id]: { status: 'ready', error: error.message } }))
     }
@@ -1204,6 +1365,7 @@ export default function App() {
       setReviewerFeedback((current) => ({ ...current, [caseItem.id]: result.rejection }))
       if (result.proposals) setProposalLineages((current) => ({ ...current, [caseItem.id]: result.proposals }))
       setReviewDecisions((current) => ({ ...current, [caseItem.id]: { status: 'rejected' } }))
+      void refreshQaQueue({ silent: true })
       setShowRejectDialog(false)
       setShowChangeDiff(false)
       setShowAgent(true)
@@ -1229,6 +1391,9 @@ export default function App() {
           onSelectCase={selectCase}
           onSelectPublicSnapshot={selectPublicSnapshot}
           publicSnapshot={publicSnapshot}
+          queueDashboard={qaQueueState.dashboard}
+          onShowBatchQueue={showBatchQueue}
+          onShowReviewInbox={showReviewInbox}
           collapsed={docketCollapsed}
           onToggle={() => setDocketCollapsed((value) => !value)}
         />
@@ -1242,7 +1407,25 @@ export default function App() {
             MAD QA
           </button>
         )}
-        {activeDataView === 'qa' && (!caseItem || !activeTownExtract) ? (
+        {activeDataView === 'queue' ? (
+          <QaBatchQueueWorkspace
+            dashboard={qaQueueState.dashboard}
+            status={qaQueueState.status}
+            error={qaQueueState.error}
+            onRefresh={() => refreshQaQueue()}
+            onControl={controlQueuedBatch}
+            onShowInbox={showReviewInbox}
+          />
+        ) : activeDataView === 'inbox' ? (
+          <QaReviewInboxWorkspace
+            dashboard={qaQueueState.dashboard}
+            status={qaQueueState.status}
+            error={qaQueueState.error}
+            onRefresh={() => refreshQaQueue()}
+            onShowQueue={showBatchQueue}
+            onOpenReview={openQueuedReview}
+          />
+        ) : activeDataView === 'qa' && (!caseItem || !activeTownExtract) ? (
           activeQaIssue && ['working', 'loading-town', 'error', 'stopped'].includes(qaInvestigation.status) ? (
             <AgentActivityStream
               issue={activeQaIssue}
@@ -1282,6 +1465,8 @@ export default function App() {
               onSelectPreview={selectQaPreview}
               onClear={() => setSelectedQaRecordIds([])}
               onRun={runSelectedQaRecords}
+              onQueue={queueSelectedQaRecords}
+              queueSubmitting={queueSubmitting}
               onRetry={() => selectQaIssue(activeQaIssue)}
             />
           ) : (

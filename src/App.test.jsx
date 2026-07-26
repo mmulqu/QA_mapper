@@ -214,6 +214,73 @@ const qaRecordPage = {
   ],
 }
 
+const emptyQaBatchDashboard = {
+  kind: 'mad-qa-batch-dashboard',
+  storage: { relativePath: '.runtime\\qa-batch-jobs.json', persistent: true },
+  worker: { concurrency: 1, active: false, model: 'qwen3-4b-thinking-2507' },
+  jobs: [],
+  inbox: {
+    counts: { ready: 0, withheld: 0, failed: 0, accepted: 0, rejected: 0 },
+    items: [],
+  },
+}
+
+const qaBatchDashboard = {
+  ...emptyQaBatchDashboard,
+  worker: { concurrency: 1, active: true, model: 'qwen3-4b-thinking-2507' },
+  jobs: [{
+    id: 'BATCH-20260725-TEST0001',
+    viewId: 'MADV_QA_ASL_DUPES',
+    issue: {
+      id: 'MADV_QA_ASL_DUPES',
+      description: 'Structure lookup records that are functionally duplicative',
+      category: 'Point–structure lookups',
+    },
+    model: 'qwen3-4b-thinking-2507',
+    status: 'running',
+    total: 2,
+    completed: 1,
+    counts: {
+      queued: 0,
+      running: 1,
+      ready: 1,
+      withheld: 0,
+      failed: 0,
+      accepted: 0,
+      rejected: 0,
+      cancelled: 0,
+    },
+    current: {
+      itemId: 'BATCH-20260725-TEST0001-002',
+      recordId: qaRecordPage.rows[1].id,
+      address: qaRecordPage.rows[1].address,
+      municipality: qaRecordPage.rows[1].municipality,
+      activity: { title: 'Read combined QA evidence' },
+    },
+  }],
+  inbox: {
+    counts: { ready: 1, withheld: 0, failed: 0, accepted: 0, rejected: 0 },
+    items: [{
+      id: 'BATCH-20260725-TEST0001-001',
+      jobId: 'BATCH-20260725-TEST0001',
+      viewId: 'MADV_QA_ASL_DUPES',
+      issue: {
+        id: 'MADV_QA_ASL_DUPES',
+        description: 'Structure lookup records that are functionally duplicative',
+      },
+      model: 'qwen3-4b-thinking-2507',
+      status: 'ready',
+      recordId: rockportQaCase.id,
+      record: qaRecordPage.rows[0],
+      caseId: rockportQaCase.id,
+      proposalId: 'proposal-rockport',
+      changeCount: 1,
+      summary: 'Delete one functionally duplicate structure lookup row.',
+      canOpen: true,
+    }],
+  },
+}
+
 async function selectTrainingCase(user, name = '147 Brookline Street') {
   await user.click(screen.getByText('Training examples'))
   await user.click(screen.getByRole('button', { name: new RegExp(name) }))
@@ -244,6 +311,62 @@ describe('MAD QA feature explorer', () => {
     expect(screen.getByRole('heading', { name: 'Select a non-zero QA check' })).toBeInTheDocument()
     expect(screen.getByText('Structure lookup records that are functionally duplicative')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Attributes' })).not.toBeInTheDocument()
+  })
+
+  it('sends selected QA rows to the persistent bridge queue', async () => {
+    vi.stubGlobal('fetch', vi.fn((url, options = {}) => {
+      if (url === '/api/qa/issues') return Promise.resolve({ ok: true, json: async () => qaCatalog })
+      if (url === '/api/qa/batches' && options.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ job: qaBatchDashboard.jobs[0], dashboard: qaBatchDashboard }),
+        })
+      }
+      if (url === '/api/qa/batches') {
+        return Promise.resolve({ ok: true, json: async () => emptyQaBatchDashboard })
+      }
+      if (url === '/api/qa/issues/MADV_QA_ASL_DUPES/records') {
+        return Promise.resolve({ ok: true, json: async () => qaRecordPage })
+      }
+      return Promise.resolve({ ok: false, json: async () => ({}) })
+    }))
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: /Structure lookup records that are functionally duplicative/ }))
+    await user.click(await screen.findByRole('button', { name: 'Select first 2' }))
+    await user.click(screen.getByRole('button', { name: 'Queue 2 selected' }))
+
+    expect(await screen.findByRole('heading', { name: 'Batch queue' })).toBeInTheDocument()
+    expect(screen.getByText('Queued work continues while this browser is closed.')).toBeInTheDocument()
+    expect(screen.getByText('BATCH-20260725-TEST0001')).toBeInTheDocument()
+    expect(globalThis.fetch).toHaveBeenCalledWith('/api/qa/batches', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        viewId: 'MADV_QA_ASL_DUPES',
+        recordIds: [rockportQaCase.id, 'MADV_QA_ASL_DUPES-MOCK-0002'],
+      }),
+    }))
+  })
+
+  it('opens the persistent review inbox while a batch continues', async () => {
+    vi.stubGlobal('fetch', vi.fn((url) => {
+      if (url === '/api/qa/issues') return Promise.resolve({ ok: true, json: async () => qaCatalog })
+      if (url === '/api/qa/batches') {
+        return Promise.resolve({ ok: true, json: async () => qaBatchDashboard })
+      }
+      return Promise.resolve({ ok: false, json: async () => ({}) })
+    }))
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: /Review inbox/ }))
+
+    expect(await screen.findByRole('heading', { name: 'Review inbox' })).toBeInTheDocument()
+    expect(screen.getByText('Completed investigations arrive here while remaining batches continue.')).toBeInTheDocument()
+    expect(screen.getByText('Delete one functionally duplicate structure lookup row.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Open review/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '1 active' })).toBeInTheDocument()
   })
 
   it('previews a bounded related-feature map before starting the agent', async () => {
