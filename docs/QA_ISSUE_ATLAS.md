@@ -29,7 +29,33 @@ The local bridge exposes:
 
 The browser uses the same Leaflet renderer as the existing detailed town and case maps. This removes the WebGL, PMTiles, Tippecanoe, and WSL startup dependencies. The atlas code remains lazy-loaded, so opening the normal QA list does not initialize another map.
 
-The visual stack draws red point, line, and polygon evidence layers over either MassGIS basemap. A click opens the exact issue card. If basemap tiles are unavailable, the local vectors remain visible and the textual issue index remains usable.
+The visual stack draws red point, line, and polygon evidence layers over either
+MassGIS basemap. The atlas never carries a statewide MAD copy. A click opens the
+exact issue card, zooms to it, and asks the shared bridge for one deterministic
+250 m public evidence window containing:
+
+- MassGIS Level 3 property-tax parcels;
+- MassGIS two-dimensional building structures;
+- MassGIS Master Address Points.
+
+The bridge uses fixed, read-only ArcGIS FeatureServer endpoints and an attribute
+allowlist. It accepts no client-supplied service URL, caps each layer at 750
+features, caches the same bounded request for five minutes across reviewers, and
+returns partial results if one public service is unavailable. The red QA layer
+is always drawn above these subdued reference layers.
+
+Each returned public feature is clickable. The atlas highlights the selected
+parcel, structure, or address point and opens an on-demand attribute inspector
+with the allow-listed FeatureServer fields and a link to the official layer
+metadata. Parcel owner and mailing-address fields are deliberately excluded.
+Closing the public inspector returns to the selected QA issue card.
+
+`GET /api/massgis/context?bbox=<west,south,east,north>&zoom=18&layers=parcels,structures,addresses`
+is the only browser contract for these public vectors. It does not expose a MAD
+database credential or download an entire municipality or state.
+
+If basemap tiles or public context are unavailable, the local issue vectors
+remain visible and the textual issue index remains usable.
 
 ## Refresh semantics
 
@@ -69,7 +95,8 @@ Manual refresh build:
 npm run atlas:build
 ```
 
-No WSL compiler or extra browser map package is required.
+No WSL compiler or extra browser map package is required. The public context
+proxy uses Node's built-in `fetch`; it adds no Python dependency.
 
 ## Next production steps
 

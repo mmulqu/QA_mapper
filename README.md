@@ -7,9 +7,16 @@ The current app focuses on the geometry-and-record inspection loop without conne
 - browse the current daily QA checks by data category, with zero-count checks omitted;
 - open a QA category, inspect a bounded preview of its record-level issues, and select up to 10 rows for the local agent;
 - run selected issues sequentially, with a visible Stop action that cancels the active LM Studio request and leaves the remaining queue unrun;
-- resolve the affected town through MAD community/town identifiers and load that town's extract;
+- keep the statewide map to sparse QA issue geometry rather than copying the statewide MAD;
+- select an issue to load a reproducible 250 m read-only evidence window from
+  public MassGIS L3 parcels, building structures, and Master Address Points;
+- click any public parcel, structure, or address point to inspect its allow-listed
+  FeatureServer attributes and open the official service metadata;
+- resolve the affected town through MAD community/town identifiers and load the
+  current Rockport fixture only for local relationship testing;
 - view address-point, structure, parcel, road, and nearby-address vectors on a Leaflet map;
-- switch between the public MassGIS basemap and MassGIS 2025 natural-color imagery, and control vector visibility;
+- switch between the public MassGIS basemap and MassGIS 2025 natural-color
+  imagery, and control both local and public reference-layer visibility;
 - click the map to list every feature from the enabled vector layers at that location, then open its full attribute table;
 - keep the selected feature highlighted on the map and use the attribute-table back arrow to return to the prior feature or click-result list;
 - follow preset relations between address points, Master Address, MAD structure, structure lookup, address variants, and parcel;
@@ -91,7 +98,7 @@ The app can connect to a model already running in LM Studio through a localhost-
 3. Neighboring address points as clickable sequence context.
 4. A no-proposal state for cases that need municipal evidence.
 
-The primary queue is parsed from the supplied daily QA report. Rockport currently provides the first real town-extract proof case; the older examples remain under **Training examples**. Basemap and imagery tiles are referenced from public MassGIS services, and no private credential is embedded in the client. See [docs/QA_CATEGORY_TOWN_WORKFLOW.md](docs/QA_CATEGORY_TOWN_WORKFLOW.md) for the current data contract and limitations.
+The primary queue is parsed from the supplied daily QA report. Rockport currently provides the first real town-extract proof case; the older examples remain under **Training examples**. Basemap and imagery tiles are referenced from public MassGIS services. Public parcel, structure, and address-point features are fetched by the bridge only for the fixed issue evidence window, with no private credential embedded in the client. See [docs/QA_CATEGORY_TOWN_WORKFLOW.md](docs/QA_CATEGORY_TOWN_WORKFLOW.md) for the current data contract and limitations.
 
 ## Optional public MAD test fixture
 

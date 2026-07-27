@@ -18,6 +18,9 @@ This is the running implementation record for the workbench. Check off a gate on
 - [x] On-demand MAD QA AP, MAD schema, and public MassGIS GeoServer skills; the bridge exposes only bounded, read-only schema and GeoServer evidence tools.
 - [x] Category-specific reviewer memory for MA, AV, AP, APC, BRV, BSA, MSN, SNV, ESZ, SN, and ASL, with a required LM Studio memory-authoring tool call, guarded writes, provenance, deduplication, on-demand loading, and reviewer-visible file activity.
 - [x] Public MassGIS basemap and 2025 natural-color imagery tile services in Leaflet.
+- [x] Keep the statewide atlas sparse and load a shared, cached 250 m public
+      evidence window from MassGIS L3 parcels, structures, and Master Address
+      Points only after a reviewer selects an issue.
 - [x] Case-scoped agent map-evidence tool that fits and highlights an address point, structure, or road segment over either MassGIS background, saves an auditable PNG, and attaches it to vision-capable LM Studio models through a model-name-agnostic message contract.
 - [x] Parse the supplied daily QA report into data-category buckets and show only non-zero checks.
 - [x] Preview record-level rows for a selected QA category, label mock versus fixture evidence, and run or queue only a reviewer-selected batch of up to 50 rows.
@@ -218,7 +221,8 @@ The eventual browser chat must call an authenticated server-side agent service. 
 
 ## Inputs needed before real-data work starts
 
-1. A safe test extract or test geodatabase connection and approved access method.
+1. A safe case-scoped test read path or test geodatabase connection and approved
+   access method; a statewide MAD extract is not required.
 2. The MAD entity/field map, domains, relationship classes, GlobalID policy, and geometry SRID.
 3. The existing QA SQL result query/view, its owner, and the intended refresh cadence.
 4. Written placement, link, merge, retirement, and escalation policies for the first five skills.
@@ -228,5 +232,21 @@ The eventual browser chat must call an authenticated server-side agent service. 
 
 - Basemap: `MassGISBasemap` public ArcGIS Online tile cache.
 - Imagery: `Massachusetts_Aerial_Imagery_2025` public natural-color tile cache.
+- Parcels: `Massachusetts_Property_Tax_Parcels/FeatureServer/0`, queried through
+  the bridge for one bounded issue window.
+- Structures: `Building_Structures/FeatureServer/0`, queried through the bridge
+  for one bounded issue window.
+- Address points: `MassGIS_Master_Address_Points/FeatureServer/0`, queried
+  through the bridge for one bounded issue window.
 
-The services are referenced by the browser and by the localhost-only map-evidence renderer; no credential is stored in the client. Agent snapshots are written only to the ignored `.runtime/map-evidence/` directory. See the official [MassGIS basemap service](https://tiles.arcgis.com/tiles/hGdibHYSPO59RG1h/arcgis/rest/services/MassGISBasemap/MapServer) and [2025 aerial-imagery page](https://www.mass.gov/info-details/massgis-data-2025-aerial-imagery).
+The basemap and imagery tiles are referenced by the browser. Public vectors are
+requested by the localhost bridge through a fixed service allowlist; no
+credential or arbitrary upstream URL is stored in the client. Agent snapshots
+are written only to the ignored `.runtime/map-evidence/` directory. See the
+official [MassGIS ArcGIS service directory](https://arcgisserver.digital.mass.gov/arcgisserver/rest/services/AGOL),
+[MassGIS tile service directory](https://tiles.arcgis.com/tiles/hGdibHYSPO59RG1h/arcgis/rest/services),
+and [2025 aerial-imagery page](https://www.mass.gov/info-details/massgis-data-2025-aerial-imagery).
+
+The three FeatureServer layers are queryable and clickable in the atlas. Their
+selected features use a distinct highlight and an on-demand, read-only attribute
+sheet; the parcel allowlist excludes owner and owner-mailing fields.

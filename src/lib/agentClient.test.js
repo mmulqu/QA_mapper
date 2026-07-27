@@ -6,6 +6,7 @@ import {
   createQaBatch,
   getProposalAuditInfo,
   getProposalLineage,
+  getMassgisContext,
   getQaBatchDashboard,
   getQaBatchJob,
   getQaBatchItem,
@@ -192,6 +193,25 @@ describe('local agent client', () => {
       headers: { 'x-mad-local-action': 'refresh-qa-atlas' },
       signal: undefined,
     })
+  })
+
+  it('loads public MassGIS evidence through the bounded local bridge route', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ kind: 'massgis-public-context', layers: [] }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getMassgisContext({
+      bbox: [-70.63, 42.65, -70.615, 42.662],
+      zoom: 18,
+      layers: ['parcels', 'structures', 'addresses'],
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/massgis/context?bbox=-70.63%2C42.65%2C-70.615%2C42.662&zoom=18&layers=parcels%2Cstructures%2Caddresses',
+      { signal: undefined },
+    )
   })
 
   it('creates, controls, and reopens persistent QA batch work', async () => {

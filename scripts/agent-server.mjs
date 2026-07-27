@@ -38,6 +38,10 @@ import {
   readQaIssueAtlasManifest,
 } from './qa-issue-atlas.mjs'
 import {
+  createMassgisContextService,
+  parseMassgisContextRequest,
+} from './massgis-context.mjs'
+import {
   appendReviewerSkillMemory,
   getSkillMemoryTarget,
   QA_CATEGORY_SKILLS,
@@ -2675,7 +2679,11 @@ async function streamQueuedBatchItem(response, queue, jobId, itemId, reviewer) {
   }
 }
 
-export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAULT_LM_STUDIO_URL, model = process.env.LM_STUDIO_MODEL || DEFAULT_MODEL } = {}) {
+export function createAgentServer({
+  baseUrl = process.env.LM_STUDIO_URL || DEFAULT_LM_STUDIO_URL,
+  model = process.env.LM_STUDIO_MODEL || DEFAULT_MODEL,
+  massgisContextService = createMassgisContextService(),
+} = {}) {
   const reviewerActivity = createReviewerActivityLog({ path: REVIEWER_ACTIVITY_PATH })
   let batchQueue
   batchQueue = createQaBatchQueue({
@@ -2772,6 +2780,11 @@ export function createAgentServer({ baseUrl = process.env.LM_STUDIO_URL || DEFAU
 
       if (request.method === 'GET' && url.pathname === '/api/skills') {
         return sendJson(response, 200, { skills: getSkillIndex() })
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/massgis/context') {
+        const contextRequest = parseMassgisContextRequest(url.searchParams)
+        return sendJson(response, 200, await massgisContextService.getContext(contextRequest))
       }
 
       if (request.method === 'GET' && url.pathname === '/api/qa/atlas') {

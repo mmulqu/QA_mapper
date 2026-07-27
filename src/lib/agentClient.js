@@ -104,6 +104,18 @@ export async function refreshQaIssueAtlas({ signal } = {}) {
   return payload
 }
 
+export async function getMassgisContext({ bbox, zoom = 18, layers = [], signal } = {}) {
+  const query = new URLSearchParams({
+    bbox: bbox.join(','),
+    zoom: String(zoom),
+    ...(layers.length ? { layers: layers.join(',') } : {}),
+  })
+  const response = await fetch(`/api/massgis/context?${query}`, { signal })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || 'The bounded MassGIS reference layers could not be loaded.')
+  return payload
+}
+
 export async function getQaIssueRecords(viewId, { signal } = {}) {
   const response = await fetch(`/api/qa/issues/${encodeURIComponent(viewId)}/records`, { signal })
   const payload = await response.json().catch(() => ({}))
