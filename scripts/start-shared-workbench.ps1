@@ -38,6 +38,49 @@ function Wait-ForLocalUrl {
   throw "$ServiceName did not become ready at $Url within $TimeoutSeconds seconds."
 }
 
+function Reset-LmStudioModel {
+  param(
+    [Parameter(Mandatory = $true)][string]$LmsPath,
+    [Parameter(Mandatory = $true)][string]$Model
+  )
+
+  $loadedJson = (& $LmsPath ps --json | Out-String)
+  if ($LASTEXITCODE -ne 0) {
+    throw 'LM Studio could not report its loaded models.'
+  }
+  try {
+    $loadedModels = @($loadedJson | ConvertFrom-Json)
+  } catch {
+    throw "LM Studio returned an unreadable loaded-model list: $($_.Exception.Message)"
+  }
+
+  $modelLeaf = ($Model -split '[/\\]')[-1]
+  $matchingModels = @($loadedModels | Where-Object {
+    $baseIdentifier = [string]$_.identifier -replace ':\d+$', ''
+    $_.type -eq 'llm' -and (
+      $_.modelKey -eq $Model -or
+      $_.modelKey -eq $modelLeaf -or
+      $_.identifier -eq $Model -or
+      $baseIdentifier -eq $Model -or
+      $baseIdentifier -eq $modelLeaf -or
+      $_.indexedModelIdentifier -eq $Model
+    )
+  })
+  foreach ($loadedModel in $matchingModels) {
+    Write-Host "Unloading existing LM Studio instance $($loadedModel.identifier)..."
+    & $LmsPath unload $loadedModel.identifier
+    if ($LASTEXITCODE -ne 0) {
+      throw "LM Studio could not unload $($loadedModel.identifier)."
+    }
+  }
+
+  Write-Host "Loading one fresh LM Studio instance for $Model..."
+  & $LmsPath load $Model --identifier $Model --yes
+  if ($LASTEXITCODE -ne 0) {
+    throw "LM Studio could not load model $Model."
+  }
+}
+
 try {
   $resolvedPython = (Resolve-Path -LiteralPath $PythonPath -ErrorAction Stop).Path
   & $resolvedPython -c 'import geopandas, pandas, shapely, pyproj, pyogrio'
@@ -68,15 +111,11 @@ try {
       -ServiceName 'LM Studio'
   }
 
-  $modelStatus = (& $lms.Source ls | Out-String)
-  if ($modelStatus -notmatch "(?m)^\s*$([regex]::Escape($Model)).*LOADED") {
-    & $lms.Source load $Model | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "LM Studio could not load model $Model." }
-  }
-
   if (Get-NetTCPConnection -LocalPort $agentPort -State Listen -ErrorAction SilentlyContinue) {
     throw "Port $agentPort already has a listener. Keep exactly one shared bridge; inspect the existing process before starting another."
   }
+
+  Reset-LmStudioModel -LmsPath $lms.Source -Model $Model
 
   $env:MAD_AGENT_PYTHON = $resolvedPython
   $env:LM_STUDIO_MODEL = $Model
