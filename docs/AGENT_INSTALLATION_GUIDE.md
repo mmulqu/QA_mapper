@@ -100,7 +100,7 @@ LM Studio's Windows guidance recommends at least 16 GB RAM and 4 GB dedicated VR
 - <https://lmstudio.ai/docs/cli>
 - <https://nodejs.org/en/download>
 
-The selected local model must support OpenAI-compatible tool calling. Vision support is also needed for map-image evidence. The launcher's default model identifier is `gemma-4-e4b-it`, but another installed model may be supplied with `-Model`.
+The selected local model must support OpenAI-compatible tool calling. Vision support is also needed for map-image evidence. The launcher discovers installed LM Studio LLMs, automatically selects a sole model, and prompts when several are available. An exact installed model key may still be supplied with `-Model` for unattended startup.
 
 The WorkSpace must permit outbound HTTPS to these public service hosts:
 
@@ -270,18 +270,17 @@ versioned local GeoJSON, and public MassGIS evidence uses Node's built-in
 
 1. Install and launch LM Studio.
 2. Download a tool-capable, vision-capable model that fits the workstation.
-3. Record the identifier shown by:
+3. Confirm that at least one LLM is listed by:
 
    ```powershell
-   lms.exe ls
+   lms.exe ls --llm
    ```
-
-4. If using the default identifier, confirm `gemma-4-e4b-it` is present. Otherwise pass the installed identifier to the launcher.
 
 The launcher performs the remaining work:
 
 - starts `lms server` on port `1234` when needed;
-- loads the requested model when it is not already loaded;
+- discovers installed LLMs and prompts for a choice when more than one is available;
+- unloads and freshly loads the selected model when starting the bridge;
 - starts or refreshes the local Node bridge;
 - starts Vite;
 - opens the app unless `-NoBrowser` is supplied.
@@ -304,12 +303,14 @@ the local launcher or start their own bridge:
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
   -File '.\scripts\start-shared-workbench.ps1' `
   -PythonPath 'C:\absolute\path\to\python.exe' `
-  -Model 'gemma-4-e4b-it'
+  -Model '<installed-model-key>'
 ```
 
 The script validates the exact Python interpreter, installs the JavaScript
 lockfile dependencies, builds the React app, starts or reuses LM Studio, loads
 the selected model, and then runs the single Node bridge in the foreground.
+Keep `-Model` in unattended Task Scheduler commands so a machine with multiple
+installed models never pauses for interactive input.
 The bridge serves both the API and the built app at
 <http://127.0.0.1:8787>. All Windows users on that AWS WorkSpace open that same
 URL and enter their own 2–6 initials.
@@ -356,12 +357,12 @@ Agent-friendly PowerShell path with machine-readable output and no browser launc
 ```powershell
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
   -File '.\scripts\start-local-workbench.ps1' `
-  -Model 'gemma-4-e4b-it' `
   -RockportFaults enabled `
   -NoBrowser
 ```
 
-Replace the model identifier when needed:
+When several models are installed, this interactive command prompts for one.
+For an unattended or preselected launch, pass its exact LM Studio model key:
 
 ```powershell
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
@@ -494,15 +495,18 @@ Launch LM Studio once, open a new PowerShell window, and retry `lms --help`. If 
 npx lmstudio install-cli
 ```
 
-### Requested model is not available
+### No model is available, or a requested model is not found
 
 Run:
 
 ```powershell
-lms.exe ls
+lms.exe ls --llm
 ```
 
-Use an exact installed identifier with `-Model`, or have the user download the intended model in LM Studio. Do not silently substitute a materially different model.
+Download at least one LLM in LM Studio. For unattended startup, use an exact
+installed model key with `-Model`; otherwise omit `-Model` and choose from the
+launcher's discovered list. The launcher does not silently substitute a
+materially different model.
 
 ### LM Studio is installed but port 1234 is down
 

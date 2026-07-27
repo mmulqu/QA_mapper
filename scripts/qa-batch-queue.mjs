@@ -24,6 +24,29 @@ const ACTIVE_AGENT_STATUSES = new Set(['queued', 'running'])
 const MAX_ITEM_TRANSCRIPT_EVENTS = 120
 const MAX_ITEM_TRANSCRIPT_TEXT = 24_000
 
+const defaultFileOperations = {
+  mkdirSync,
+  renameSync,
+  writeFileSync,
+}
+
+export function writeQueueStateFile(
+  storagePath,
+  state,
+  { fileOperations = defaultFileOperations } = {},
+) {
+  const storageDirectory = dirname(storagePath)
+  const temporaryPath = resolve(
+    storageDirectory,
+    `.${basename(storagePath)}.${process.pid}.tmp`,
+  )
+  const serializedState = `${JSON.stringify(state, null, 2)}\n`
+  fileOperations.mkdirSync(storageDirectory, { recursive: true })
+  fileOperations.writeFileSync(temporaryPath, serializedState, 'utf8')
+  fileOperations.renameSync(temporaryPath, storagePath)
+  return { atomic: true }
+}
+
 function clone(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value))
 }
@@ -202,6 +225,9 @@ export class QaBatchQueue {
     clock = () => new Date(),
     autoStart = true,
     onAudit = null,
+    onPersistenceError = null,
+    writeState = writeQueueStateFile,
+    persistenceRetryDelayMs = 1_000,
   }) {
     if (!storagePath) throw new Error('A persistent QA batch storage path is required.')
     if (typeof investigate !== 'function') throw new Error('A QA investigation function is required.')
@@ -211,6 +237,11 @@ export class QaBatchQueue {
     this.model = model
     this.clock = clock
     this.onAudit = typeof onAudit === 'function' ? onAudit : null
+    this.onPersistenceError = typeof onPersistenceError === 'function'
+      ? onPersistenceError
+      : (error) => console.error(`[MAD QA queue persistence] ${error.message}`)
+    this.writeState = writeState
+    this.persistenceRetryDelayMs = persistenceRetryDelayMs
     this.active = null
     this.pumpScheduled = false
     this.disposed = false
@@ -218,6 +249,8 @@ export class QaBatchQueue {
     this.listeners = new Set()
     this.requestListeners = new Set()
     this.persistTimer = null
+    this.persistenceError = null
+    this.persistenceErrorAt = null
     this.state = this.readState()
     this.persist()
     if (autoStart) this.schedulePump()
@@ -237,13 +270,30 @@ export class QaBatchQueue {
   }
 
   persist() {
-    mkdirSync(dirname(this.storagePath), { recursive: true })
-    const temporaryPath = resolve(
-      dirname(this.storagePath),
-      `.${basename(this.storagePath)}.${process.pid}.tmp`,
-    )
-    writeFileSync(temporaryPath, `${JSON.stringify(this.state, null, 2)}\n`, 'utf8')
-    renameSync(temporaryPath, this.storagePath)
+    try {
+      this.writeState(this.storagePath, this.state)
+      if (this.persistTimer) {
+        clearTimeout(this.persistTimer)
+        this.persistTimer = null
+      }
+      this.persistenceError = null
+      this.persistenceErrorAt = null
+      return true
+    } catch (error) {
+      const message = error?.message || 'The persistent QA batch store could not be updated.'
+      const changed = this.persistenceError !== message
+      this.persistenceError = message
+      this.persistenceErrorAt = isoNow(this.clock)
+      if (changed) {
+        try {
+          this.onPersistenceError(new Error(message))
+        } catch {
+          // Error reporting must never terminate the queue worker.
+        }
+      }
+      this.schedulePersist(this.persistenceRetryDelayMs)
+      return false
+    }
   }
 
   takeSequence() {
@@ -359,6 +409,9 @@ export class QaBatchQueue {
       storage: {
         relativePath: '.runtime\\qa-batch-jobs.json',
         persistent: true,
+        healthy: !this.persistenceError,
+        error: this.persistenceError,
+        errorAt: this.persistenceErrorAt,
       },
       worker: {
         concurrency: 1,
@@ -1062,13 +1115,17 @@ export class QaBatchQueue {
     this.publish(job, { type: event, job: jobSummary(job, this) })
   }
 
-  persistSoon() {
+  schedulePersist(delayMs) {
     if (this.persistTimer || this.disposed) return
     this.persistTimer = setTimeout(() => {
       this.persistTimer = null
       if (!this.disposed) this.persist()
-    }, 300)
+    }, delayMs)
     this.persistTimer.unref?.()
+  }
+
+  persistSoon() {
+    this.schedulePersist(300)
   }
 
   appendTranscript(item, event, recordedAt) {

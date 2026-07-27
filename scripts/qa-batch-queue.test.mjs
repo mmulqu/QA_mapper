@@ -9,7 +9,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
-import { QaBatchQueue } from './qa-batch-queue.mjs'
+import { QaBatchQueue, writeQueueStateFile } from './qa-batch-queue.mjs'
 
 function record(id, address) {
   return {
@@ -244,6 +244,74 @@ test('does not overwrite an unreadable persistent queue', () => {
     assert.equal(readFileSync(storagePath, 'utf8'), corruptContents)
   } finally {
     rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('preserves the last valid queue file when an atomic Windows rename is blocked', () => {
+  const files = new Map()
+  let temporaryPath = null
+  const storagePath = resolve('C:\\workbench', '.runtime', 'qa-batch-jobs.json')
+  files.set(storagePath, '{"version":1}\n')
+
+  assert.throws(
+    () => writeQueueStateFile(
+      storagePath,
+      { version: 2, jobs: [], requests: [], nextSequence: 1 },
+      {
+        fileOperations: {
+          mkdirSync: () => {},
+          writeFileSync: (path, contents) => {
+            temporaryPath = path
+            files.set(path, contents)
+          },
+          renameSync: () => {
+            const error = new Error('operation not permitted')
+            error.code = 'EPERM'
+            throw error
+          },
+        },
+      },
+    ),
+    /operation not permitted/,
+  )
+
+  assert.equal(JSON.parse(files.get(storagePath)).version, 1)
+  assert.equal(JSON.parse(files.get(temporaryPath)).version, 2)
+  assert.match(temporaryPath, /\.qa-batch-jobs\.json\.\d+\.tmp$/)
+})
+
+test('keeps the in-memory queue available and retries when persistence is temporarily blocked', async () => {
+  const persistenceErrors = []
+  let storageBlocked = true
+  let writeAttempts = 0
+  const queue = new QaBatchQueue({
+    storagePath: resolve('C:\\workbench', '.runtime', 'qa-batch-jobs.json'),
+    model: 'test-qwen',
+    autoStart: false,
+    investigate: async () => ({}),
+    writeState: () => {
+      writeAttempts += 1
+      if (!storageBlocked) return
+      const error = new Error('EPERM: operation not permitted')
+      error.code = 'EPERM'
+      throw error
+    },
+    persistenceRetryDelayMs: 10,
+    onPersistenceError: (error) => persistenceErrors.push(error.message),
+  })
+
+  try {
+    assert.equal(queue.dashboard().storage.healthy, false)
+    assert.match(queue.dashboard().storage.error, /EPERM/)
+    assert.deepEqual(persistenceErrors, ['EPERM: operation not permitted'])
+
+    storageBlocked = false
+    await waitFor(() => queue.dashboard().storage.healthy)
+    assert.equal(writeAttempts, 2)
+    assert.equal(queue.dashboard().storage.healthy, true)
+    assert.equal(queue.dashboard().storage.error, null)
+  } finally {
+    queue.dispose()
   }
 })
 

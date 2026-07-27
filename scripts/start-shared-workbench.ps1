@@ -2,7 +2,7 @@
 param(
   [Parameter(Mandatory = $true)]
   [string]$PythonPath,
-  [string]$Model = 'gemma-4-e4b-it',
+  [string]$Model,
   [ValidateSet('enabled', 'disabled')]
   [string]$RockportFaults = 'enabled',
   [switch]$SkipInstall,
@@ -13,6 +13,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $agentPort = 8787
 $lmStudioPort = 1234
+. (Join-Path $PSScriptRoot 'lm-studio-model-selection.ps1')
 
 function Test-LocalUrl {
   param([Parameter(Mandatory = $true)][string]$Url)
@@ -49,7 +50,8 @@ function Reset-LmStudioModel {
     throw 'LM Studio could not report its loaded models.'
   }
   try {
-    $loadedModels = @($loadedJson | ConvertFrom-Json)
+    $parsedLoadedModels = $loadedJson | ConvertFrom-Json
+    $loadedModels = @($parsedLoadedModels)
   } catch {
     throw "LM Studio returned an unreadable loaded-model list: $($_.Exception.Message)"
   }
@@ -115,6 +117,8 @@ try {
     throw "Port $agentPort already has a listener. Keep exactly one shared bridge; inspect the existing process before starting another."
   }
 
+  $availableModels = @(Get-LmStudioAvailableModels -LmsPath $lms.Source)
+  $Model = Select-LmStudioModel -AvailableModels $availableModels -RequestedModel $Model
   Reset-LmStudioModel -LmsPath $lms.Source -Model $Model
 
   $env:MAD_AGENT_PYTHON = $resolvedPython
