@@ -112,6 +112,49 @@ function Get-AgentBridgeHealth {
   }
 }
 
+function Reset-LmStudioModel {
+  param(
+    [Parameter(Mandatory = $true)][string]$LmsPath,
+    [Parameter(Mandatory = $true)][string]$Model
+  )
+
+  $loadedJson = (& $LmsPath ps --json | Out-String)
+  if ($LASTEXITCODE -ne 0) {
+    throw 'LM Studio could not report its loaded models.'
+  }
+  try {
+    $loadedModels = @($loadedJson | ConvertFrom-Json)
+  } catch {
+    throw "LM Studio returned an unreadable loaded-model list: $($_.Exception.Message)"
+  }
+
+  $modelLeaf = ($Model -split '[/\\]')[-1]
+  $matchingModels = @($loadedModels | Where-Object {
+    $baseIdentifier = [string]$_.identifier -replace ':\d+$', ''
+    $_.type -eq 'llm' -and (
+      $_.modelKey -eq $Model -or
+      $_.modelKey -eq $modelLeaf -or
+      $_.identifier -eq $Model -or
+      $baseIdentifier -eq $Model -or
+      $baseIdentifier -eq $modelLeaf -or
+      $_.indexedModelIdentifier -eq $Model
+    )
+  })
+  foreach ($loadedModel in $matchingModels) {
+    Write-Host "Unloading existing LM Studio instance $($loadedModel.identifier)..."
+    & $LmsPath unload $loadedModel.identifier
+    if ($LASTEXITCODE -ne 0) {
+      throw "LM Studio could not unload $($loadedModel.identifier)."
+    }
+  }
+
+  Write-Host "Loading one fresh LM Studio instance for $Model..."
+  & $LmsPath load $Model --identifier $Model --yes
+  if ($LASTEXITCODE -ne 0) {
+    throw "LM Studio could not load model $Model."
+  }
+}
+
 function Stop-StaleAgentBridge {
   $listeners = @(Get-NetTCPConnection -LocalPort $agentPort -State Listen -ErrorAction SilentlyContinue)
   foreach ($listener in $listeners) {
@@ -154,13 +197,6 @@ try {
     Wait-ForLocalUrl -Url "http://127.0.0.1:$lmStudioPort/v1/models" -ServiceName 'LM Studio'
   }
 
-  $modelStatus = (& $lms.Source ls | Out-String)
-  if ($modelStatus -notmatch "(?m)^\s*$([regex]::Escape($Model)).*LOADED") {
-    Write-Host "Loading LM Studio model $Model..."
-    & $lms.Source load $Model | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "LM Studio could not load model $Model." }
-  }
-
   $env:LM_STUDIO_MODEL = $Model
   $env:MAD_ROCKPORT_FAULTS = if ($RockportFaults -eq 'enabled') { '1' } else { '0' }
   $agentSourceVersion = Get-AgentSourceVersion
@@ -175,8 +211,11 @@ try {
     Stop-StaleAgentBridge
   }
   if (-not (Test-PortListener -Port $agentPort)) {
+    Reset-LmStudioModel -LmsPath $lms.Source -Model $Model
     Write-Host 'Starting the local MAD agent bridge...'
     Start-Process -FilePath $node.Source -ArgumentList @('scripts/agent-server.mjs') -WorkingDirectory $projectRoot -WindowStyle Hidden | Out-Null
+  } else {
+    Write-Host 'Using the model already owned by the running MAD agent bridge.'
   }
   Wait-ForLocalUrl -Url "http://127.0.0.1:$agentPort/api/health" -ServiceName 'Local MAD agent bridge'
 
