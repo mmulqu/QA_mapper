@@ -13,6 +13,7 @@ same AWS WorkSpace:
 - LM Studio's OpenAI-compatible API listens on `127.0.0.1:1234`;
 - exactly one Node bridge process owns all QA and LLM work;
 - one existing Python environment supplies GeoPandas, pandas, and Shapely;
+- Node's built-in `fetch` retrieves only fixed, bounded public MassGIS context;
 - local generated state stays under ignored `.runtime/`;
 - each reviewer enters 2–6 initials for coordination and audit attribution;
 - no production MAD credential enters the browser;
@@ -51,6 +52,7 @@ design across several machines or run more than one bridge process.
 | Safe concurrent decisions | Claim versions provide optimistic concurrency. A stale tab or a person without the claim cannot accept/reject. Only a batch creator can pause, resume, or cancel it. |
 | Shared durable state | Queue, requests, transcripts, claims, and decisions persist in `.runtime\qa-batch-jobs.json`. |
 | Activity attribution | `.runtime\reviewer-agent-activity.jsonl` appends the actor initials for issues, claims, every follow-up prompt, revisions, decisions, and rejected-to-accepted recoveries. |
+| Public map context | Every user sees the same sparse QA atlas. Selecting an issue requests the same fixed 250 m MassGIS parcel, structure, and address-point window through the one shared bridge cache. |
 | Multiple API or worker processes | Not supported or needed on this one machine. Local JSON/JSONL stores require exactly one Node owner. |
 
 This is a trusted-workspace coordination model, not a security boundary. Anyone
@@ -99,6 +101,17 @@ LM Studio's Windows guidance recommends at least 16 GB RAM and 4 GB dedicated VR
 - <https://nodejs.org/en/download>
 
 The selected local model must support OpenAI-compatible tool calling. Vision support is also needed for map-image evidence. The launcher's default model identifier is `gemma-4-e4b-it`, but another installed model may be supplied with `-Model`.
+
+The WorkSpace must permit outbound HTTPS to these public service hosts:
+
+- `tiles.arcgis.com` for the MassGIS basemap, L3/structure tile metadata, and
+  2025 imagery;
+- `services1.arcgis.com` for bounded parcel and structure features;
+- `arcgisserver.digital.mass.gov` for bounded Master Address Points.
+
+No API key is required. Browsers load basemap/imagery tiles directly; the one
+Node bridge loads the three vector services. If workplace policy requires a
+proxy, configure it for the approved service account before starting the bridge.
 
 ## 4. Inspect the machine first
 
@@ -248,7 +261,10 @@ npm.cmd install
 
 The double-click launcher also runs `npm install` when `node_modules` or the `sharp` map renderer is absent. Running it explicitly during installation makes failures easier to diagnose.
 
-Do not add extra map packages. The detailed maps and QA Issue Atlas use the existing Leaflet and React-Leaflet dependencies. The issue atlas data is versioned local GeoJSON.
+Do not add extra map packages. The detailed maps and QA Issue Atlas use the
+existing Leaflet and React-Leaflet dependencies. The issue atlas data is
+versioned local GeoJSON, and public MassGIS evidence uses Node's built-in
+`fetch`. It does not require PMTiles, an Esri SDK, or another Python package.
 
 ## 8. Prepare LM Studio
 
@@ -373,6 +389,7 @@ $lmModels = Invoke-RestMethod -Uri 'http://127.0.0.1:1234/v1/models' -TimeoutSec
 $health = Invoke-RestMethod -Uri 'http://127.0.0.1:8787/api/health' -TimeoutSec 10
 $app = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8787' -TimeoutSec 10
 $atlas = Invoke-RestMethod -Uri 'http://127.0.0.1:8787/api/qa/atlas' -TimeoutSec 120
+$context = Invoke-RestMethod -Uri 'http://127.0.0.1:8787/api/massgis/context?bbox=-70.630,42.650,-70.615,42.662&zoom=18&layers=parcels,structures,addresses' -TimeoutSec 30
 $activity = Invoke-RestMethod -Uri 'http://127.0.0.1:8787/api/audit/reviewer-activity' -TimeoutSec 10
 
 [pscustomobject]@{
@@ -382,6 +399,9 @@ $activity = Invoke-RestMethod -Uri 'http://127.0.0.1:8787/api/audit/reviewer-act
   AppStatus = $app.StatusCode
   AtlasFormat = $atlas.dataFormat
   AtlasFeatures = $atlas.featureCollection.features.Count
+  ContextKind = $context.kind
+  ContextLayers = @($context.layers).Count
+  ContextErrors = @($context.errors).Count
   ActivityLog = $activity.relativePath
 }
 ```
@@ -394,6 +414,8 @@ Expected signals:
 - `AppStatus` is `200`;
 - `AtlasFormat` is `geojson`;
 - the supplied Rockport fixture currently returns `7` atlas features when controlled faults are enabled.
+- `ContextKind` is `massgis-public-context`, `ContextLayers` is `3`, and
+  `ContextErrors` is `0` when all three public services are reachable;
 - `ActivityLog` is `.runtime\reviewer-agent-activity.jsonl`.
 
 For a Vite development run, use port `4173` for `$app` and `$atlas`. The shared
@@ -411,11 +433,17 @@ The build may report a non-fatal bundle-size advisory. A test failure or nonzero
 ### Browser smoke test
 
 1. Open **Issue map** and confirm red QA point, line, or polygon features are visible.
-2. Click a feature and confirm its QA issue card opens.
-3. Expand **Browse mapped issues without the map** and confirm the textual fallback is populated.
-4. Click **Refresh QA map** and confirm it completes without a Python or Microsoft Store message.
-5. Open one QA category and confirm its bounded row preview loads.
-6. Do not accept or publish a proposal as part of an installation smoke test.
+2. Click a feature and confirm its QA issue card opens and the map zooms in.
+3. Confirm **MassGIS public evidence** reports parcels, structures, and address
+   points for a 250 m window; use **Public context** to toggle each layer. Click
+   one feature in each public layer and confirm the read-only attribute sheet
+   opens with an **Open official service metadata** link.
+4. Switch to **2025 imagery** and confirm the same red QA issue remains above the
+   public reference layers.
+5. Expand **Browse mapped issues without the map** and confirm the textual fallback is populated.
+6. Click **Refresh QA map** and confirm it completes without a Python or Microsoft Store message.
+7. Open one QA category and confirm its bounded row preview loads.
+8. Do not accept or publish a proposal as part of an installation smoke test.
 
 ### Two-user coordination smoke test
 
@@ -511,14 +539,20 @@ $atlas = Invoke-RestMethod -Uri 'http://127.0.0.1:8787/api/qa/atlas' -TimeoutSec
 $atlas.dataFormat
 $atlas.featureCollection.features.Count
 $atlas.bounds
+$context = Invoke-RestMethod -Uri 'http://127.0.0.1:8787/api/massgis/context?bbox=-70.630,42.650,-70.615,42.662&zoom=18&layers=parcels,structures,addresses' -TimeoutSec 30
+$context.layers | Select-Object id, featureCount, truncated, cacheHit
+$context.errors
 ```
 
 If features exist:
 
 1. hard-refresh the browser;
 2. open **Browse mapped issues without the map**;
-3. check whether a firewall or proxy blocks `tiles.arcgis.com`;
-4. switch between the MassGIS basemap and 2025 imagery.
+3. check whether a firewall or proxy blocks `tiles.arcgis.com`,
+   `services1.arcgis.com`, or `arcgisserver.digital.mass.gov`;
+4. switch between the MassGIS basemap and 2025 imagery;
+5. click a red issue before expecting public vectors—the app deliberately makes
+   no statewide parcel, structure, or address-point request.
 
 The local red issue vectors and textual index are designed to remain useful when public basemap tiles fail.
 
@@ -549,6 +583,46 @@ $env:MAD_PUBLISH_MODE = 'apply'
 ```
 
 Do not install ArcGIS Pro or ArcPy solely for the local workbench. A future production deployment must separately provide an approved ArcGIS Pro Python path through `MAD_ARCPY_PYTHON`, enterprise connection/version details, field mappings, authentication, transactional editing, validators, and audit storage. See [ARCPY_BRIDGE.md](ARCPY_BRIDGE.md).
+
+### Minimum production read contract
+
+Do **not** copy the entire MAD into the web application. The production machine
+needs a read-only database/API adapter with these bounded interfaces:
+
+| Proposed database object or API | Required purpose and fields |
+| --- | --- |
+| `MADV_QA_ISSUE_INDEX` | One sparse row per current exception, built from the approved `MADV_QA_*` checks. Required fields: `source_run_id`, `view_id`, `record_id`, category, description, severity, town/community ID, status, source watermark/edit date, stable row hash, and either the affected geometry or an anchor layer plus stable anchor ID. Unique key: `(source_run_id, view_id, record_id)`. |
+| `MADV_QA_ISSUE_ANCHOR` | Resolves nonspatial QA rows to one approved address point, structure, parcel, street arc, centroid, site, or community geometry. Return the relationship path used; do not let the browser invent joins. |
+| `MAD_QA_GET_CASE_EVIDENCE` (read-only procedure or Case API query) | Given one issue key, return only its current source row, relationship closure, nearby address sequence, and geometry inside an approved radius. Include stable IDs, edit dates, row hashes, relationship IDs, source database/version, and extraction time. |
+| `MADV_QA_SOURCE_WATERMARK` | Reports the QA run/version and the source edit watermark so atlas refresh and stale-proposal checks are reproducible. |
+
+`MADV_QA_ISSUE_INDEX`, `MADV_QA_ISSUE_ANCHOR`, and
+`MADV_QA_SOURCE_WATERMARK` are recommended adapter names, not claims about
+objects that already exist. The existing source checks retain their real names
+from the supplied report—such as `MADV_QA_MA_DUPES`,
+`MADV_QA_AV_APID_MISMATCH`, `MADV_QA_AP_DUPES`,
+`MADV_QA_ASL_DUPES`, `MADV_QA_BRV_LINKFEAT`,
+`MADV_QA_BSA_NO_BRV`, `MADV_QA_MSN_AP_ONLY`,
+`MADV_QA_SNV_DOM_STNMID`, and `MADV_QA_ESZ_PSAP_NAME`. The production owner
+must confirm every enabled `MADV_QA_*` view, its stable record key, and refresh
+cadence rather than relying on those examples alone.
+
+The case-evidence adapter needs read access only to the relevant relationship
+tables/views, including Master Address, Address Variants, Address Points,
+Address Point Centroids, Point–Structure Lookup, MAD Structures, Base Range
+Variants, Base Street Arcs, Master Street Names, Street Name Variants, Sites,
+communities, and parcels. It must query by the selected issue's stable keys and
+radius—not export the whole town or state.
+
+Public MassGIS parcels, structures, address points, basemap, and imagery remain
+read-only external context. They do not replace secured MAD relationship data,
+do not establish a production edit target, and require no database view.
+
+Production writes stay in a separate publisher identity and process. The
+publisher re-reads only the approved affected rows, verifies row hashes/edit
+dates, applies the allow-listed changes transactionally, validates, and appends
+an immutable audit event. The web/API service account must not inherit that
+write credential.
 
 Moving the code to one shared AWS WorkSpace supports the trusted, initials-based
 coordination described in [Current multi-user status](#2-current-multi-user-status).

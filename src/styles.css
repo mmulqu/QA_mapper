@@ -1207,7 +1207,8 @@ button:focus-visible {
 .qa-atlas-toolbar p { margin: 5px 0 0; color: #576c71; font-size: 12px; }
 .qa-atlas-toolbar-actions { display: flex; align-items: center; gap: 9px; }
 .qa-atlas-toolbar-actions label,
-.qa-atlas-toolbar-actions button {
+.qa-atlas-toolbar-actions button,
+.atlas-context-menu > summary {
   min-height: 42px;
   color: #173b50;
   background: #f8faf7;
@@ -1230,6 +1231,52 @@ button:focus-visible {
 .qa-atlas-toolbar-actions button { padding: 0 14px; font-size: 13px; font-weight: 800; }
 .qa-atlas-toolbar-actions button:hover:not(:disabled) { color: #fff; background: #174d6d; }
 .qa-atlas-toolbar-actions button:disabled { cursor: progress; opacity: 0.68; }
+.atlas-context-menu {
+  position: relative;
+  font-size: 13px;
+}
+.atlas-context-menu > summary {
+  padding: 0 11px;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 800;
+}
+.atlas-context-menu > summary::-webkit-details-marker { display: none; }
+.atlas-context-menu > summary:hover,
+.atlas-context-menu[open] > summary { color: #fff; background: #174d6d; }
+.atlas-context-menu > summary small {
+  padding-inline-start: 7px;
+  border-inline-start: 1px solid currentColor;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 10px;
+  opacity: 0.78;
+}
+.atlas-context-menu > div {
+  position: absolute;
+  top: calc(100% + 7px);
+  right: 0;
+  width: 260px;
+  padding: 13px;
+  color: #203842;
+  background: #f8faf7;
+  border: 1px solid #7f9491;
+  box-shadow: 4px 6px 16px rgba(14, 34, 43, 0.2);
+  display: grid;
+  gap: 7px;
+  z-index: 20;
+}
+.atlas-context-menu > div > strong { color: #173b50; font-size: 13px; }
+.atlas-context-menu > div > span { color: #596d72; font-size: 10px; line-height: 1.4; }
+.qa-atlas-toolbar-actions .atlas-context-menu label {
+  min-height: 32px;
+  padding: 5px 3px;
+  background: transparent;
+  border: 0;
+  gap: 9px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.atlas-context-menu input { accent-color: #174d6d; }
 .qa-atlas-stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; isolation: isolate; }
 .qa-atlas-map { position: absolute; inset: 0; width: 100%; height: 100%; background: #cfdad7; z-index: 0; }
 .qa-atlas-loading,
@@ -1283,6 +1330,44 @@ button:focus-visible {
   font-size: 11px;
 }
 .qa-atlas-freshness strong { padding-left: 7px; border-left: 1px solid #b8c5c2; font-family: "Cascadia Code", Consolas, monospace; }
+.atlas-context-status {
+  position: absolute;
+  top: 57px;
+  left: 14px;
+  max-width: min(470px, calc(100% - 28px));
+  min-height: 43px;
+  padding: 8px 10px;
+  color: #334c54;
+  background: rgba(248, 250, 247, 0.95);
+  border: 1px solid #91a39f;
+  box-shadow: 2px 3px 10px rgba(14, 34, 43, 0.12);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  z-index: 3;
+}
+.atlas-context-status > svg { flex: 0 0 auto; margin-top: 2px; }
+.atlas-context-status > span { min-width: 0; display: grid; gap: 1px; }
+.atlas-context-status strong { color: #29434d; font-size: 11px; }
+.atlas-context-status small { color: #596d72; font-size: 10px; line-height: 1.35; overflow-wrap: anywhere; }
+.atlas-context-status.has-warning {
+  color: #74520d;
+  background: rgba(255, 247, 221, 0.97);
+  border-color: #ae8d45;
+}
+.atlas-context-status.has-warning strong,
+.atlas-context-status.has-warning small { color: #66480b; }
+.atlas-context-status button {
+  flex: 0 0 auto;
+  min-height: 29px;
+  padding: 0 9px;
+  color: #66480b;
+  background: #f7f8f5;
+  border: 1px solid #8b620e;
+  font-size: 11px;
+  font-weight: 800;
+}
+.atlas-context-status button:hover { color: #fff; background: #8b620e; }
 .atlas-live-dot {
   width: 8px;
   height: 8px;
@@ -1386,6 +1471,54 @@ button:focus-visible {
 .atlas-primary-action { color: #fff; background: #174d6d; }
 .atlas-card-actions button:hover:not(:disabled) { filter: brightness(0.9); }
 .atlas-card-actions button:disabled { cursor: progress; opacity: 0.7; }
+.atlas-reference-inspector {
+  top: 14px;
+  right: 14px;
+  bottom: 14px;
+  width: min(410px, calc(100% - 28px));
+  min-width: 320px;
+  z-index: 5;
+}
+.atlas-reference-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+.atlas-reference-heading > div { min-width: 0; }
+.atlas-reference-heading p {
+  margin: 4px 0 0;
+  color: #52666d;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.atlas-reference-heading > span {
+  flex: 0 0 auto;
+  color: #50646b;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+}
+.atlas-reference-source {
+  padding: 15px 20px 18px;
+  background: #edf3f1;
+  border-top: 1px solid #b8c6c3;
+}
+.atlas-reference-source p {
+  margin: 0 0 10px;
+  color: #53686e;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.atlas-reference-source a {
+  min-height: 36px;
+  color: #0a5d90;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 800;
+}
+.atlas-reference-source a:hover { color: #173b50; text-decoration-thickness: 2px; }
 .qa-atlas-index { color: #203842; background: #f8faf7; border-top: 1px solid #94a6a2; }
 .qa-atlas-index > summary {
   min-height: 43px;
@@ -2321,11 +2454,26 @@ button:focus-visible {
   .qa-atlas-toolbar p { display: none; }
   .qa-atlas-toolbar-actions { width: 100%; }
   .qa-atlas-toolbar-actions label,
-  .qa-atlas-toolbar-actions button { flex: 1; }
+  .qa-atlas-toolbar-actions button,
+  .atlas-context-menu { flex: 1; }
   .qa-atlas-toolbar-actions button { justify-content: center; }
+  .atlas-context-menu > summary { justify-content: center; }
+  .atlas-context-menu > div { right: auto; left: 0; width: min(280px, calc(100vw - 26px)); }
   .qa-atlas-freshness { top: 9px; left: 9px; max-width: calc(100% - 18px); }
   .qa-atlas-freshness strong { display: none; }
+  .atlas-context-status { top: 51px; left: 9px; max-width: calc(100% - 18px); }
+  .atlas-context-status small { max-width: 46ch; }
   .atlas-issue-card { top: auto; right: 0; bottom: 0; left: 0; width: 100%; max-height: 65%; }
+  .atlas-reference-inspector {
+    position: fixed;
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    min-width: 0;
+    max-height: min(74vh, 640px);
+  }
   .qa-atlas-index { display: none; }
   .qa-atlas-note { font-size: 9px; }
   .map-workspace { height: 100vh; }
