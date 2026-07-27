@@ -64,6 +64,7 @@ export default function AgentActivityStream({
   batchPosition,
   onStop,
   onBack,
+  backLabel = 'Back to issues',
 }) {
   const scrollRegionRef = useRef(null)
   const [isFollowingLive, setIsFollowingLive] = useState(true)
@@ -71,6 +72,8 @@ export default function AgentActivityStream({
   const statusText = useMemo(() => {
     if (error) return 'Investigation stopped'
     if (status === 'stopped') return 'Stopped by reviewer'
+    if (status === 'cancelled') return 'Batch cancelled'
+    if (status === 'completed') return 'Batch complete'
     if (status === 'loading-town') return 'Loading the selected town extract'
     return latestEvent?.title || 'Connecting to the local agent'
   }, [error, latestEvent?.title, status])
@@ -110,9 +113,9 @@ export default function AgentActivityStream({
             ) : null}
           </div>
           <div className="qa-activity-session">
-            <span className={error || status === 'stopped' ? 'activity-live-mark is-error' : 'activity-live-mark'} aria-hidden="true" />
+            <span className={error || ['stopped', 'cancelled'].includes(status) ? 'activity-live-mark is-error' : 'activity-live-mark'} aria-hidden="true" />
             <span>
-              <strong>{error || status === 'stopped' ? 'Stopped' : 'Live'}</strong>
+              <strong>{error || ['stopped', 'cancelled'].includes(status) ? 'Stopped' : status === 'completed' ? 'Complete' : 'Live'}</strong>
               <small>{model || 'LM Studio model'}</small>
             </span>
           </div>
@@ -168,7 +171,7 @@ export default function AgentActivityStream({
           ) : onBack ? (
             <button type="button" onClick={onBack}>
               <ArrowLeft size={16} aria-hidden="true" />
-              Back to issues
+              {backLabel}
             </button>
           ) : null}
         </footer>

@@ -2,7 +2,7 @@ import { ArrowLeft, Bot, BrainCircuit, Check, CheckCircle2, CircleAlert, Databas
 import { useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { askLocalAgent } from '../lib/agentClient'
+import { askLocalAgent, getCaseConversation } from '../lib/agentClient'
 
 const starterPrompts = [
   'Why was this case flagged?',
@@ -59,6 +59,7 @@ export default function AgentPanel({
   initialResult = null,
   runActivity = [],
   automaticStatus = 'idle',
+  reviewer,
 }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -66,27 +67,79 @@ export default function AgentPanel({
   const [error, setError] = useState('')
   const [hasDraft, setHasDraft] = useState(false)
   const [showRunTranscript, setShowRunTranscript] = useState(false)
+  const [queuedRequest, setQueuedRequest] = useState(null)
 
   useEffect(() => {
-    setMessages([])
-    setInput('')
-    setStatus('idle')
-    setError('')
-    setHasDraft(false)
-    setShowRunTranscript(false)
-  }, [caseItem.id])
-
-  useEffect(() => {
-    if (!initialResult?.reply) return
-    setMessages([{
+    setMessages(initialResult?.reply ? [{
+      id: `${caseItem.id}:initial`,
       role: 'agent',
       content: initialResult.reply,
       tools: initialResult.toolEvents ?? [],
-    }])
-    setHasDraft(Boolean(initialResult.draft?.changes?.length))
-  }, [initialResult])
+    }] : [])
+    setInput('')
+    setStatus('idle')
+    setError('')
+    setHasDraft(Boolean(initialResult?.draft?.changes?.length))
+    setShowRunTranscript(false)
+    setQueuedRequest(null)
+    let cancelled = false
 
-  const isWorking = status === 'working' || automaticStatus === 'working'
+    const refreshConversation = async () => {
+      try {
+        const conversation = await getCaseConversation(caseItem.id)
+        if (cancelled) return
+        const sharedMessages = conversation.flatMap((entry) => {
+          const prompt = {
+            id: `${entry.requestId}:user`,
+            role: 'user',
+            author: entry.reviewer,
+            content: entry.prompt,
+          }
+          if (entry.status === 'completed' && entry.reply) {
+            return [prompt, {
+              id: `${entry.requestId}:agent`,
+              role: 'agent',
+              content: entry.reply,
+              tools: entry.toolEvents ?? [],
+            }]
+          }
+          if (entry.status === 'failed') {
+            return [prompt, {
+              id: `${entry.requestId}:error`,
+              role: 'system',
+              content: entry.error || 'This shared follow-up could not complete.',
+            }]
+          }
+          return [prompt]
+        })
+        const initialMessages = initialResult?.reply ? [{
+          id: `${caseItem.id}:initial`,
+          role: 'agent',
+          content: initialResult.reply,
+          tools: initialResult.toolEvents ?? [],
+        }] : []
+        setMessages([...initialMessages, ...sharedMessages])
+      } catch {
+        if (!cancelled && initialResult?.reply) {
+          setMessages([{
+            id: `${caseItem.id}:initial`,
+            role: 'agent',
+            content: initialResult.reply,
+            tools: initialResult.toolEvents ?? [],
+          }])
+        }
+      }
+    }
+
+    void refreshConversation()
+    const interval = globalThis.setInterval(refreshConversation, 3000)
+    return () => {
+      cancelled = true
+      globalThis.clearInterval(interval)
+    }
+  }, [caseItem.id, initialResult?.reply])
+
+  const isWorking = ['queued', 'working'].includes(status) || automaticStatus === 'working'
   const transcriptEvents = useMemo(() => {
     const reply = initialResult?.reply?.trim()
     const capturedOutput = runActivity
@@ -116,7 +169,12 @@ export default function AgentPanel({
     setStatus('working')
 
     try {
-      const result = await askLocalAgent(caseItem.id, prompt)
+      const result = await askLocalAgent(caseItem.id, prompt, {
+        onQueue: (request) => {
+          setQueuedRequest(request)
+          setStatus(request.status === 'queued' ? 'queued' : 'working')
+        },
+      })
       setMessages((current) => [...current, {
         role: 'agent',
         content: result.reply,
@@ -124,11 +182,13 @@ export default function AgentPanel({
       }])
       if (result.draft?.validation?.passed) {
         setHasDraft(true)
-        onDraftStaged(result.draft, result.reviewerFeedback, result.proposals)
+        onDraftStaged(result.draft, result.reviewerFeedback, result.proposals, result.reviewClaim)
       }
+      setQueuedRequest(null)
       setStatus('idle')
     } catch (requestError) {
       setError(requestError.message)
+      setQueuedRequest(null)
       setStatus('idle')
     }
   }
@@ -244,8 +304,12 @@ export default function AgentPanel({
         ) : (
           <div className="agent-message-list" aria-live="polite">
             {messages.map((message, index) => (
-              <article className={`agent-message ${message.role}`} key={`${message.role}-${index}`}>
-                <span>{message.role === 'user' ? 'You' : 'Local agent'}</span>
+              <article className={`agent-message ${message.role}`} key={message.id || `${message.role}-${index}`}>
+                <span>
+                  {message.role === 'user'
+                    ? message.author?.id === reviewer?.id ? 'You' : message.author?.name || 'Reviewer'
+                    : message.role === 'system' ? 'Queue' : 'Local agent'}
+                </span>
                 <div className="agent-markdown">
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
@@ -268,8 +332,18 @@ export default function AgentPanel({
               <div className="agent-working" role="status" aria-live="polite">
                 <LoaderCircle className="agent-spinner" size={20} aria-hidden="true" />
                 <span>
-                  <strong>Agent is working</strong>
-                  <small>{automaticStatus === 'working' ? 'Narrowing QA rows and selecting a town extract…' : 'Reviewing case evidence…'}</small>
+                  <strong>
+                    {queuedRequest?.queue?.status === 'queued'
+                      ? `Waiting in shared queue · position ${queuedRequest.queue.position} of ${queuedRequest.queue.total}`
+                      : 'Agent is working'}
+                  </strong>
+                  <small>
+                    {queuedRequest?.queue?.status === 'queued'
+                      ? `${queuedRequest.queue.ahead} ${queuedRequest.queue.ahead === 1 ? 'request' : 'requests'} ahead of your follow-up.`
+                      : automaticStatus === 'working'
+                        ? 'Narrowing QA rows and selecting a town extract…'
+                        : 'Reviewing case evidence… Your follow-up has the model now.'}
+                  </small>
                 </span>
               </div>
             ) : null}

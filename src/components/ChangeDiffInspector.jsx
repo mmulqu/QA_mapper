@@ -49,6 +49,7 @@ export default function ChangeDiffInspector({
   decision,
   proposal,
   proposalLineage = [],
+  reviewClaim = null,
 }) {
   const changes = stagedChanges ?? getCaseChanges(caseItem)
   const fieldCount = countChangedFields(changes)
@@ -72,6 +73,16 @@ export default function ChangeDiffInspector({
 
       {changes.length ? (
         <div className="diff-scroll-region">
+          {reviewClaim ? (
+            <div className="diff-review-claim" role="status">
+              <strong>Shared review claimed by you</strong>
+              <span>
+                Coworkers can see this issue is in review. The claim expires at{' '}
+                {new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
+                  .format(new Date(reviewClaim.claimExpiresAt))}.
+              </span>
+            </div>
+          ) : null}
           <p className="diff-intro">Red is the exported source value. Green is the agent’s draft. Nothing here has been applied.</p>
           <ProposalLineage proposal={proposal} proposals={proposalLineage} />
           {changes.map((change) => (

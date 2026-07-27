@@ -6,10 +6,11 @@ FIRST VIEWPORT: A permanent left QA docket with inbox and queue status beside on
 FORM: Map-first feature explorer with progressive disclosure; no persistent evidence folio.
 */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   ArrowLeft,
+  ArrowRight,
   ChevronRight,
   CircleDot,
   Database,
@@ -18,12 +19,14 @@ import {
   Layers3,
   Link2,
   ListTodo,
+  LogOut,
   LoaderCircle,
   MapPin,
   MapPinned,
   PanelLeftClose,
   Play,
   Search,
+  UserRound,
   X,
 } from 'lucide-react'
 import AgentPanel from './components/AgentPanel'
@@ -35,7 +38,9 @@ import {
   QaBatchQueueWorkspace,
   QaReviewInboxWorkspace,
 } from './components/QaBatchOperations'
+import QaRecordPromptDialog from './components/QaRecordPromptDialog'
 import RejectDraftDialog from './components/RejectDraftDialog'
+import ReviewerLogin from './components/ReviewerLogin'
 import { MAP_SERVICES } from './config/mapServices'
 import { cases } from './data/cases'
 import { getFeatureRecords, relatedKeys } from './lib/featureRecords'
@@ -43,19 +48,31 @@ import { countChangedFields, getCaseChanges } from './lib/changeDiff'
 import { getPublicMadRecords } from './lib/publicMadRecords'
 import {
   acceptCaseDraft,
+  claimQaBatchItem,
   controlQaBatch,
   createQaBatch,
   getProposalLineage,
   getQaBatchDashboard,
-  getQaBatchItem,
+  getQaBatchJob,
+  getQaIssueAtlas,
   getQaIssueCatalog,
   getQaIssueRecords,
   getQaRecordMapPreview,
   getTownExtract,
   getTownRecordBundle,
   investigateQaIssue,
+  refreshQaIssueAtlas,
   rejectCaseDraft,
+  releaseQaBatchItem,
+  streamQaBatchJob,
 } from './lib/agentClient'
+import {
+  clearReviewerSession,
+  createReviewerSession,
+  getReviewerSession,
+} from './lib/reviewerSession'
+
+const QaIssueAtlas = lazy(() => import('./components/QaIssueAtlas'))
 
 const featureIcons = {
   'address-point': MapPin,
@@ -103,6 +120,16 @@ function mergeAgentActivity(current, incoming) {
   return [...next, normalized].slice(-80)
 }
 
+function replayAgentActivity(events) {
+  return (events || []).reduce((current, event) => mergeAgentActivity(current, event), [])
+}
+
+function findLiveBatchItem(job, preferredItemId = null) {
+  const items = job?.items || []
+  if (preferredItemId) return items.find((item) => item.id === preferredItemId) || null
+  return items.find((item) => item.status === 'running') || null
+}
+
 const townSpatialLayers = new Set([
   'addresses',
   'centroids',
@@ -144,8 +171,12 @@ function CaseDocket({
   queueDashboard,
   onShowBatchQueue,
   onShowReviewInbox,
+  onShowQaAtlas,
+  qaAtlasCount,
   collapsed,
   onToggle,
+  reviewer,
+  onSignOut,
 }) {
   const [openQaGroups, setOpenQaGroups] = useState(() => new Set())
 
@@ -170,9 +201,32 @@ function CaseDocket({
           <PanelLeftClose size={20} />
         </button>
       </header>
+      <div className="docket-reviewer">
+        <UserRound size={17} aria-hidden="true" />
+        <span>
+          <small>Reviewing as</small>
+          <strong>{reviewer.name}</strong>
+        </span>
+        <button type="button" onClick={onSignOut} aria-label={`Sign out ${reviewer.name}`}>
+          <LogOut size={15} aria-hidden="true" />
+        </button>
+      </div>
 
       <div className="docket-case-list">
         <nav className="docket-operations" aria-label="Batch operations">
+          <button
+            type="button"
+            className={activeDataView === 'atlas' ? 'active' : undefined}
+            onClick={onShowQaAtlas}
+            aria-current={activeDataView === 'atlas' ? 'page' : undefined}
+          >
+            <MapPinned size={19} />
+            <span>
+              <strong>Issue map</strong>
+              <small>Spatial QA overview</small>
+            </span>
+            <b>{qaAtlasCount ?? '—'}</b>
+          </button>
           <button
             type="button"
             className={activeDataView === 'inbox' ? 'active' : undefined}
@@ -197,7 +251,7 @@ function CaseDocket({
               <strong>Batch queue</strong>
               <small>Runs after the browser closes</small>
             </span>
-            <b>{(queueDashboard?.jobs ?? []).filter((job) => ['queued', 'running', 'paused'].includes(job.status)).length}</b>
+            <b>{queueDashboard?.agentQueue?.entries?.length ?? 0}</b>
           </button>
         </nav>
 
@@ -337,13 +391,15 @@ function CaseDocket({
           <span>
             {activeDataView === 'qa'
               ? 'QA report · town extracts are read-only'
-              : activeDataView === 'queue'
-                ? 'Persistent local queue · concurrency 1'
-                : activeDataView === 'inbox'
-                  ? 'Human review inbox · no auto-accept'
-                  : activeDataView === 'public'
-                    ? 'Public export · no edit actions'
-                    : 'Training workspace · vector export'}
+              : activeDataView === 'atlas'
+                ? 'Local issue atlas · authoritative refresh'
+                : activeDataView === 'queue'
+                  ? 'Persistent local queue · concurrency 1'
+                  : activeDataView === 'inbox'
+                    ? 'Human review inbox · no auto-accept'
+                    : activeDataView === 'public'
+                      ? 'Public export · no edit actions'
+                      : 'Training workspace · vector export'}
           </span>
         </div>
         <ProposalAuditControl />
@@ -488,6 +544,8 @@ function QaIssueSelector({
   onRun,
   onQueue,
   queueSubmitting,
+  recordPrompts,
+  onEditPrompt,
   onRetry,
 }) {
   const loading = status === 'loading-records'
@@ -578,6 +636,7 @@ function QaIssueSelector({
                     <th scope="col">Municipality</th>
                     <th scope="col">Affected record</th>
                     <th scope="col">Map</th>
+                    <th scope="col">Agent context</th>
                     <th scope="col">Source</th>
                   </tr>
                 </thead>
@@ -588,6 +647,7 @@ function QaIssueSelector({
                     const previewAvailable = row.mapPreview?.status === 'available'
                     const previewLoading = mapPreviewState?.status === 'loading' && mapPreviewState.record?.id === row.id
                     const anchorLabel = row.mapPreview?.relation?.anchorLabel
+                    const reviewerContext = recordPrompts[row.id] || ''
                     return (
                       <tr key={row.id} className={checked ? 'is-selected' : undefined}>
                         <td>
@@ -624,6 +684,17 @@ function QaIssueSelector({
                             {previewLoading ? 'Loading' : previewAvailable ? 'View map' : 'Needs keys'}
                           </button>
                           <small>{anchorLabel ? `Via ${anchorLabel}` : 'No map relate'}</small>
+                        </td>
+                        <td className="qa-record-context-cell">
+                          <button
+                            type="button"
+                            className={reviewerContext ? 'qa-record-context-button has-context' : 'qa-record-context-button'}
+                            onClick={() => onEditPrompt(row)}
+                            aria-label={`${reviewerContext ? 'Edit' : 'Add'} agent context for ${row.address}, ${row.municipality}`}
+                          >
+                            {reviewerContext ? 'Edit context' : 'Add context'}
+                          </button>
+                          <small>{reviewerContext ? 'Context attached' : 'Optional'}</small>
                         </td>
                         <td>
                           <span className={row.mock ? 'qa-row-source is-mock' : 'qa-row-source'}>
@@ -701,7 +772,7 @@ function QaBatchSummary({ issue, batch, onOpenResult, onBack }) {
   )
 }
 
-function QaQueueWorkspace({ issue, status, error, caseItem }) {
+function QaQueueWorkspace({ issue, status, error, caseItem, onShowQaAtlas }) {
   const working = status === 'working' || status === 'loading-town'
   const evidenceOnly = caseItem?.status === 'evidence'
 
@@ -745,6 +816,11 @@ function QaQueueWorkspace({ issue, status, error, caseItem }) {
             <span>Current QA report</span>
             <h2>Select a non-zero QA check</h2>
             <p>Open a check to see its record-level issues, select a bounded batch, and run the agent only on those rows.</p>
+            <button type="button" className="qa-start-map-action" onClick={onShowQaAtlas}>
+              <MapPinned size={19} />
+              View affected features
+              <ArrowRight size={17} />
+            </button>
             <small>Rockport fixture coverage is marked in the queue. Mock preview rows are labeled and cannot be published.</small>
           </>
         )}
@@ -754,6 +830,7 @@ function QaQueueWorkspace({ issue, status, error, caseItem }) {
 }
 
 export default function App() {
+  const [reviewer, setReviewer] = useState(() => getReviewerSession())
   const [activeCaseId, setActiveCaseId] = useState(cases[0].id)
   const [selectedFeatureKey, setSelectedFeatureKey] = useState(null)
   const [highlightedFeatureKey, setHighlightedFeatureKey] = useState(null)
@@ -768,12 +845,22 @@ export default function App() {
   const [qaCatalog, setQaCatalog] = useState(null)
   const [qaCatalogStatus, setQaCatalogStatus] = useState('loading')
   const [qaCatalogError, setQaCatalogError] = useState('')
+  const [qaAtlasState, setQaAtlasState] = useState({
+    status: 'idle',
+    error: '',
+    manifest: null,
+  })
   const [activeQaIssue, setActiveQaIssue] = useState(null)
   const [qaIssueRecords, setQaIssueRecords] = useState({ status: 'idle', error: '', page: null })
   const [qaMapPreview, setQaMapPreview] = useState({ status: 'idle', error: '', record: null, result: null })
   const [selectedQaRecordIds, setSelectedQaRecordIds] = useState([])
+  const [qaRecordPrompts, setQaRecordPrompts] = useState({})
+  const [qaRecordPromptDialog, setQaRecordPromptDialog] = useState(null)
   const [qaBatch, setQaBatch] = useState({ status: 'idle', currentIndex: 0, total: 0, results: [] })
   const [qaQueueState, setQaQueueState] = useState({ status: 'loading', error: '', dashboard: null })
+  const [qaBatchTranscript, setQaBatchTranscript] = useState({
+    status: 'idle', error: '', job: null, itemId: null, events: [],
+  })
   const [queueSubmitting, setQueueSubmitting] = useState(false)
   const [qaCase, setQaCase] = useState(null)
   const [qaInvestigation, setQaInvestigation] = useState({ status: 'idle', error: '', result: null })
@@ -790,7 +877,10 @@ export default function App() {
   const [proposalLineages, setProposalLineages] = useState({})
   const [showRejectDialog, setShowRejectDialog] = useState(false)
   const [rejectState, setRejectState] = useState({ submitting: false, error: '' })
+  const [activeReviewClaim, setActiveReviewClaim] = useState(null)
   const qaRequestRef = useRef(null)
+  const qaBatchTranscriptStreamRef = useRef(null)
+  const qaBatchTranscriptRequestRef = useRef(0)
 
   const refreshQaQueue = async ({ silent = false, signal } = {}) => {
     if (!silent) {
@@ -811,7 +901,28 @@ export default function App() {
     }
   }
 
+  const loadQaAtlas = async ({ force = false } = {}) => {
+    setQaAtlasState((current) => ({
+      ...current,
+      status: force ? 'refreshing' : 'loading',
+      error: '',
+    }))
+    try {
+      const manifest = force ? await refreshQaIssueAtlas() : await getQaIssueAtlas()
+      setQaAtlasState({ status: 'ready', error: '', manifest })
+      return manifest
+    } catch (error) {
+      setQaAtlasState((current) => ({
+        ...current,
+        status: 'error',
+        error: error.message,
+      }))
+      return null
+    }
+  }
+
   useEffect(() => {
+    if (!reviewer) return undefined
     if (typeof globalThis.fetch !== 'function') return undefined
     let cancelled = false
 
@@ -825,11 +936,22 @@ export default function App() {
       })
 
     return () => { cancelled = true }
-  }, [])
+  }, [reviewer?.id])
 
   useEffect(() => () => qaRequestRef.current?.abort(), [])
 
+  useEffect(() => () => qaBatchTranscriptStreamRef.current?.(), [])
+
   useEffect(() => {
+    if (activeDataView !== 'queue-transcript') {
+      qaBatchTranscriptRequestRef.current += 1
+      qaBatchTranscriptStreamRef.current?.()
+      qaBatchTranscriptStreamRef.current = null
+    }
+  }, [activeDataView])
+
+  useEffect(() => {
+    if (!reviewer) return undefined
     if (typeof globalThis.fetch !== 'function') return undefined
     const controller = new AbortController()
     void refreshQaQueue({ signal: controller.signal })
@@ -840,9 +962,10 @@ export default function App() {
       controller.abort()
       globalThis.clearInterval(interval)
     }
-  }, [])
+  }, [reviewer?.id])
 
   useEffect(() => {
+    if (!reviewer) return undefined
     if (typeof globalThis.fetch !== 'function') return undefined
     let cancelled = false
     setQaCatalogStatus('loading')
@@ -861,7 +984,7 @@ export default function App() {
       })
 
     return () => { cancelled = true }
-  }, [])
+  }, [reviewer?.id])
 
   const caseItem = useMemo(
     () => activeDataView === 'qa'
@@ -892,6 +1015,13 @@ export default function App() {
     const selectedRows = qaIssueRecords.page.rows.filter((row) => selectedQaRecordIds.includes(row.id))
     return selectedRows[qaBatch.currentIndex - 1] ?? null
   }, [qaBatch.currentIndex, qaIssueRecords.page, selectedQaRecordIds])
+  const queuedTranscriptItem = findLiveBatchItem(qaBatchTranscript.job, qaBatchTranscript.itemId)
+  const queuedTranscriptPosition = queuedTranscriptItem && qaBatchTranscript.job
+    ? {
+        current: Math.max(1, qaBatchTranscript.job.items.findIndex((item) => item.id === queuedTranscriptItem.id) + 1),
+        total: qaBatchTranscript.job.items.length,
+      }
+    : null
 
   const loadProposalLineage = async (caseId) => {
     try {
@@ -998,6 +1128,7 @@ export default function App() {
     setShowChangeDiff(false)
     setShowAgent(false)
     setShowRejectDialog(false)
+    setActiveReviewClaim(null)
   }
 
   const selectQaIssue = async (issue) => {
@@ -1011,6 +1142,8 @@ export default function App() {
     setQaActivity([])
     setQaModel('')
     setSelectedQaRecordIds([])
+    setQaRecordPrompts({})
+    setQaRecordPromptDialog(null)
     setQaBatch({ status: 'idle', currentIndex: 0, total: 0, results: [] })
     setQaIssueRecords({ status: 'loading', error: '', page: null })
     setQaInvestigation({ status: 'loading-records', error: '', result: null })
@@ -1019,10 +1152,12 @@ export default function App() {
       const page = await getQaIssueRecords(issue.id, { signal: requestController.signal })
       setQaIssueRecords({ status: 'ready', error: '', page })
       setQaInvestigation({ status: 'selecting', error: '', result: null })
+      return page
     } catch (error) {
-      if (error.name === 'AbortError') return
+      if (error.name === 'AbortError') return null
       setQaIssueRecords({ status: 'error', error: error.message, page: null })
       setQaInvestigation({ status: 'selecting', error: error.message, result: null })
+      return null
     } finally {
       if (qaRequestRef.current === requestController) qaRequestRef.current = null
     }
@@ -1035,6 +1170,17 @@ export default function App() {
       if (current.length >= selectionLimit) return current
       return [...current, recordId]
     })
+  }
+
+  const saveQaRecordPrompt = (recordId, reviewerContext) => {
+    setQaRecordPrompts((current) => {
+      if (!reviewerContext) {
+        const { [recordId]: _removed, ...remaining } = current
+        return remaining
+      }
+      return { ...current, [recordId]: reviewerContext }
+    })
+    setQaRecordPromptDialog(null)
   }
 
   const selectQaPreview = () => {
@@ -1083,6 +1229,7 @@ export default function App() {
       error: '',
       result,
     })
+    if (result.reviewClaim) setActiveReviewClaim(result.reviewClaim)
     if (result.draft?.changes?.length) {
       setAgentDrafts((current) => ({ ...current, [result.caseItem.id]: result.draft }))
       setReviewDecisions((current) => ({ ...current, [result.caseItem.id]: { status: 'ready' } }))
@@ -1146,12 +1293,27 @@ export default function App() {
         try {
           const result = await investigateQaIssue(activeQaIssue.id, {
             recordId: row.id,
+            reviewerContext: qaRecordPrompts[row.id] || '',
             signal: requestController.signal,
             onActivity: (event) => {
               if (event.model) setQaModel(event.model)
               setQaActivity((current) => mergeAgentActivity(current, {
                 ...event,
                 id: `${row.id}:${event.id}`,
+              }))
+            },
+            onQueue: (request) => {
+              const position = request.queue
+              setQaActivity((current) => mergeAgentActivity(current, {
+                id: `${row.id}:shared-queue`,
+                type: 'status',
+                phase: position?.status === 'running' ? 'completed' : 'started',
+                title: position?.status === 'running'
+                  ? 'Your issue has the model'
+                  : `Waiting in shared queue · position ${position?.position ?? '—'} of ${position?.total ?? '—'}`,
+                detail: position?.status === 'running'
+                  ? `The global worker is running this request for ${reviewer.name}.`
+                  : `${position?.ahead ?? 0} ${(position?.ahead ?? 0) === 1 ? 'request' : 'requests'} ahead.`,
               }))
             },
           })
@@ -1213,9 +1375,14 @@ export default function App() {
     if (!page || !activeQaIssue) return
     const recordIds = Array.isArray(recordIdsOverride) ? recordIdsOverride : selectedQaRecordIds
     if (!recordIds.length) return
+    const recordPrompts = Object.fromEntries(
+      recordIds
+        .filter((recordId) => qaRecordPrompts[recordId])
+        .map((recordId) => [recordId, qaRecordPrompts[recordId]]),
+    )
     setQueueSubmitting(true)
     try {
-      const payload = await createQaBatch(activeQaIssue.id, recordIds)
+      const payload = await createQaBatch(activeQaIssue.id, recordIds, recordPrompts)
       setQaQueueState({ status: 'ready', error: '', dashboard: payload.dashboard })
       resetQaReviewWorkspace()
       setActiveDataView('queue')
@@ -1227,6 +1394,51 @@ export default function App() {
     }
   }
 
+  const showQaAtlas = () => {
+    setActiveDataView('atlas')
+    clearFeatureSelection()
+    setShowChangeDiff(false)
+    setShowAgent(false)
+    setShowRejectDialog(false)
+    setDocketCollapsed(false)
+    if (!qaAtlasState.manifest && qaAtlasState.status !== 'loading') void loadQaAtlas()
+  }
+
+  const findAtlasIssue = (item) => {
+    for (const group of qaCatalog?.groups ?? []) {
+      const issue = group.issues.find((candidate) => candidate.id === item.view_id)
+      if (issue) return issue
+    }
+    return null
+  }
+
+  const openQaAtlasIssue = async (item) => {
+    const issue = findAtlasIssue(item)
+    if (!issue) {
+      setQaAtlasState((current) => ({
+        ...current,
+        error: `QA view ${item.view_id} is no longer present in the current report.`,
+      }))
+      return
+    }
+    const page = await selectQaIssue(issue)
+    if (page?.rows.some((row) => row.id === item.record_id)) {
+      setSelectedQaRecordIds([item.record_id])
+    }
+  }
+
+  const queueQaAtlasIssue = async (item) => {
+    try {
+      const payload = await createQaBatch(item.view_id, [item.record_id], {})
+      setQaQueueState({ status: 'ready', error: '', dashboard: payload.dashboard })
+      resetQaReviewWorkspace()
+      setActiveDataView('queue')
+      setDocketCollapsed(false)
+    } catch (error) {
+      setQaAtlasState((current) => ({ ...current, status: 'error', error: error.message }))
+    }
+  }
+
   const showBatchQueue = () => {
     setActiveDataView('queue')
     clearFeatureSelection()
@@ -1235,6 +1447,93 @@ export default function App() {
     setShowRejectDialog(false)
     setDocketCollapsed(false)
     void refreshQaQueue({ silent: true })
+  }
+
+  const closeQueuedBatchTranscript = () => {
+    qaBatchTranscriptRequestRef.current += 1
+    qaBatchTranscriptStreamRef.current?.()
+    qaBatchTranscriptStreamRef.current = null
+    setQaBatchTranscript({ status: 'idle', error: '', job: null, itemId: null, events: [] })
+  }
+
+  const openQueuedBatchTranscript = async (queueJob) => {
+    closeQueuedBatchTranscript()
+    const requestId = qaBatchTranscriptRequestRef.current
+    setActiveDataView('queue-transcript')
+    setDocketCollapsed(false)
+    setQaBatchTranscript({
+      status: 'loading',
+      error: '',
+      job: queueJob,
+      itemId: queueJob.current?.itemId ?? null,
+      events: [],
+    })
+    try {
+      const job = await getQaBatchJob(queueJob.id)
+      if (qaBatchTranscriptRequestRef.current !== requestId) return
+      const activeItem = findLiveBatchItem(job, queueJob.current?.itemId)
+      setQaBatchTranscript({
+        status: job.status === 'running' ? 'working' : job.status,
+        error: '',
+        job,
+        itemId: activeItem?.id ?? null,
+        events: replayAgentActivity(activeItem?.transcript),
+      })
+      qaBatchTranscriptStreamRef.current = streamQaBatchJob(job.id, {
+        onSnapshot: ({ job: streamedJob }) => {
+          const streamedItem = findLiveBatchItem(streamedJob, queueJob.current?.itemId)
+          setQaBatchTranscript({
+            status: streamedJob.status === 'running' ? 'working' : streamedJob.status,
+            error: '',
+            job: streamedJob,
+            itemId: streamedItem?.id ?? null,
+            events: replayAgentActivity(streamedItem?.transcript),
+          })
+        },
+        onActivity: ({ itemId, event }) => {
+          setQaBatchTranscript((current) => (
+            current.itemId && itemId !== current.itemId
+              ? current
+              : { ...current, events: mergeAgentActivity(current.events, event) }
+          ))
+        },
+        onState: ({ job: streamedJob }) => {
+          setQaBatchTranscript((current) => {
+            const nextItemId = streamedJob.current?.itemId ?? current.itemId
+            return {
+              ...current,
+              status: streamedJob.status === 'running' ? 'working' : streamedJob.status,
+              job: current.job ? { ...current.job, ...streamedJob, items: current.job.items } : streamedJob,
+              itemId: nextItemId,
+              events: nextItemId !== current.itemId ? [] : current.events,
+            }
+          })
+        },
+        onComplete: ({ job: streamedJob }) => {
+          setQaBatchTranscript((current) => ({
+            ...current,
+            status: streamedJob.status === 'running' ? 'working' : streamedJob.status,
+            job: current.job ? { ...current.job, ...streamedJob, items: current.job.items } : streamedJob,
+          }))
+          void refreshQaQueue({ silent: true })
+        },
+        onError: (message) => {
+          setQaBatchTranscript((current) => ({
+            ...current,
+            events: mergeAgentActivity(current.events, {
+              id: 'batch-stream-reconnect',
+              type: 'status',
+              phase: 'started',
+              title: 'Reconnecting to live output',
+              detail: message,
+            }),
+          }))
+        },
+      })
+    } catch (error) {
+      if (qaBatchTranscriptRequestRef.current !== requestId) return
+      setQaBatchTranscript((current) => ({ ...current, status: 'error', error: error.message }))
+    }
   }
 
   const showReviewInbox = () => {
@@ -1261,12 +1560,18 @@ export default function App() {
     const requestController = new AbortController()
     qaRequestRef.current = requestController
     try {
-      const item = await getQaBatchItem(inboxItem.id, { signal: requestController.signal })
+      const item = await claimQaBatchItem(inboxItem.id, { signal: requestController.signal })
       if (!item.result) throw new Error('This queue item has no review result to open.')
       setActiveDataView('qa')
       setActiveQaIssue(item.result.issue)
       setQaActivity([])
       resetQaReviewWorkspace()
+      setActiveReviewClaim({
+        id: item.id,
+        claimVersion: item.claimVersion,
+        claimedBy: item.claimedBy,
+        claimExpiresAt: item.claimExpiresAt,
+      })
       await loadQaResultForReview(item.result, requestController.signal)
     } catch (error) {
       if (error.name !== 'AbortError') {
@@ -1346,12 +1651,13 @@ export default function App() {
   const acceptDraft = async () => {
     setReviewDecisions((current) => ({ ...current, [caseItem.id]: { status: 'accepting' } }))
     try {
-      const result = await acceptCaseDraft(caseItem.id)
+      const result = await acceptCaseDraft(caseItem.id, '', activeReviewClaim)
       if (result.proposals) setProposalLineages((current) => ({ ...current, [caseItem.id]: result.proposals }))
       setReviewDecisions((current) => ({
         ...current,
         [caseItem.id]: { status: 'accepted', publisher: result.publisher, job: result.job },
       }))
+      setActiveReviewClaim(null)
       void refreshQaQueue({ silent: true })
     } catch (error) {
       setReviewDecisions((current) => ({ ...current, [caseItem.id]: { status: 'ready', error: error.message } }))
@@ -1361,10 +1667,11 @@ export default function App() {
   const rejectDraft = async (comment) => {
     setRejectState({ submitting: true, error: '' })
     try {
-      const result = await rejectCaseDraft(caseItem.id, comment)
+      const result = await rejectCaseDraft(caseItem.id, comment, activeReviewClaim)
       setReviewerFeedback((current) => ({ ...current, [caseItem.id]: result.rejection }))
       if (result.proposals) setProposalLineages((current) => ({ ...current, [caseItem.id]: result.proposals }))
       setReviewDecisions((current) => ({ ...current, [caseItem.id]: { status: 'rejected' } }))
+      setActiveReviewClaim(null)
       void refreshQaQueue({ silent: true })
       setShowRejectDialog(false)
       setShowChangeDiff(false)
@@ -1374,6 +1681,17 @@ export default function App() {
       return
     }
     setRejectState({ submitting: false, error: '' })
+  }
+
+  if (!reviewer) {
+    return (
+      <ReviewerLogin
+        onLogin={(name) => {
+          const session = createReviewerSession(name)
+          setReviewer(session)
+        }}
+      />
+    )
   }
 
   return (
@@ -1394,8 +1712,24 @@ export default function App() {
           queueDashboard={qaQueueState.dashboard}
           onShowBatchQueue={showBatchQueue}
           onShowReviewInbox={showReviewInbox}
+          onShowQaAtlas={showQaAtlas}
+          qaAtlasCount={qaAtlasState.manifest?.featureCount}
           collapsed={docketCollapsed}
           onToggle={() => setDocketCollapsed((value) => !value)}
+          reviewer={reviewer}
+          onSignOut={async () => {
+            try {
+              if (activeReviewClaim?.id) {
+                await releaseQaBatchItem(activeReviewClaim.id, activeReviewClaim.claimVersion)
+              }
+            } catch {
+              // The claim still expires automatically; sign-out must not trap the reviewer.
+            } finally {
+              setActiveReviewClaim(null)
+              clearReviewerSession()
+              setReviewer(null)
+            }
+          }}
         />
         {docketCollapsed && (
           <button
@@ -1407,7 +1741,38 @@ export default function App() {
             MAD QA
           </button>
         )}
-        {activeDataView === 'queue' ? (
+        {activeDataView === 'atlas' ? (
+          <Suspense fallback={(
+            <section className="qa-atlas-workspace qa-atlas-module-loading" role="status">
+              <LoaderCircle className="agent-spinner" size={26} />
+              <span>Opening the issue map…</span>
+            </section>
+          )}>
+            <QaIssueAtlas
+              manifest={qaAtlasState.manifest}
+              status={qaAtlasState.status}
+              error={qaAtlasState.error}
+              onRefresh={() => loadQaAtlas({ force: true })}
+              onOpenIssue={openQaAtlasIssue}
+              onRunIssue={queueQaAtlasIssue}
+            />
+          </Suspense>
+        ) : activeDataView === 'queue-transcript' ? (
+          <AgentActivityStream
+            issue={qaBatchTranscript.job?.issue}
+            status={qaBatchTranscript.status}
+            error={qaBatchTranscript.error}
+            events={qaBatchTranscript.events}
+            model={qaBatchTranscript.job?.model}
+            currentRecord={queuedTranscriptItem?.record ?? qaBatchTranscript.job?.current ?? null}
+            batchPosition={queuedTranscriptPosition}
+            onBack={() => {
+              closeQueuedBatchTranscript()
+              showBatchQueue()
+            }}
+            backLabel="Back to batch queue"
+          />
+        ) : activeDataView === 'queue' ? (
           <QaBatchQueueWorkspace
             dashboard={qaQueueState.dashboard}
             status={qaQueueState.status}
@@ -1415,6 +1780,8 @@ export default function App() {
             onRefresh={() => refreshQaQueue()}
             onControl={controlQueuedBatch}
             onShowInbox={showReviewInbox}
+            onOpenTranscript={openQueuedBatchTranscript}
+            reviewer={reviewer}
           />
         ) : activeDataView === 'inbox' ? (
           <QaReviewInboxWorkspace
@@ -1424,6 +1791,7 @@ export default function App() {
             onRefresh={() => refreshQaQueue()}
             onShowQueue={showBatchQueue}
             onOpenReview={openQueuedReview}
+            reviewer={reviewer}
           />
         ) : activeDataView === 'qa' && (!caseItem || !activeTownExtract) ? (
           activeQaIssue && ['working', 'loading-town', 'error', 'stopped'].includes(qaInvestigation.status) ? (
@@ -1451,6 +1819,7 @@ export default function App() {
               status={qaInvestigation.status}
               error={qaInvestigation.error}
               caseItem={caseItem}
+              onShowQaAtlas={showQaAtlas}
             />
           ) : activeQaIssue ? (
             <QaIssueSelector
@@ -1467,6 +1836,8 @@ export default function App() {
               onRun={runSelectedQaRecords}
               onQueue={queueSelectedQaRecords}
               queueSubmitting={queueSubmitting}
+              recordPrompts={qaRecordPrompts}
+              onEditPrompt={setQaRecordPromptDialog}
               onRetry={() => selectQaIssue(activeQaIssue)}
             />
           ) : (
@@ -1475,6 +1846,7 @@ export default function App() {
               status={qaInvestigation.status}
               error={qaInvestigation.error}
               caseItem={caseItem}
+              onShowQaAtlas={showQaAtlas}
             />
           )
         ) : (
@@ -1565,6 +1937,7 @@ export default function App() {
             decision={activeDecision}
             proposal={activeProposal}
             proposalLineage={activeProposalLineage}
+            reviewClaim={activeReviewClaim}
             onAccept={acceptDraft}
             onReject={() => {
               setRejectState({ submitting: false, error: '' })
@@ -1580,10 +1953,12 @@ export default function App() {
             initialResult={activeDataView === 'qa' ? qaInvestigation.result : null}
             runActivity={activeDataView === 'qa' ? qaActivity : []}
             automaticStatus={activeDataView === 'qa' ? qaInvestigation.status : 'idle'}
-            onDraftStaged={(draft, feedback, proposals) => {
+            reviewer={reviewer}
+            onDraftStaged={(draft, feedback, proposals, reviewClaim) => {
               setAgentDrafts((current) => ({ ...current, [caseItem.id]: draft }))
               if (feedback) setReviewerFeedback((current) => ({ ...current, [caseItem.id]: feedback }))
               if (proposals) setProposalLineages((current) => ({ ...current, [caseItem.id]: proposals }))
+              if (reviewClaim) setActiveReviewClaim(reviewClaim)
               setReviewDecisions((current) => ({ ...current, [caseItem.id]: { status: 'ready' } }))
             }}
             onReviewDraft={() => {
@@ -1599,6 +1974,14 @@ export default function App() {
             error={rejectState.error}
             onCancel={() => setShowRejectDialog(false)}
             onSubmit={rejectDraft}
+          />
+        ) : null}
+        {qaRecordPromptDialog ? (
+          <QaRecordPromptDialog
+            record={qaRecordPromptDialog}
+            initialValue={qaRecordPrompts[qaRecordPromptDialog.id] || ''}
+            onCancel={() => setQaRecordPromptDialog(null)}
+            onSave={(reviewerContext) => saveQaRecordPrompt(qaRecordPromptDialog.id, reviewerContext)}
           />
         ) : null}
       </main>

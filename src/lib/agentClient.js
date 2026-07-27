@@ -1,5 +1,14 @@
+import { reviewerHeaders } from './reviewerSession'
+
+function reviewerFetch(input, options = {}) {
+  return fetch(input, {
+    ...options,
+    headers: reviewerHeaders(options.headers),
+  })
+}
+
 async function postCaseAction(caseId, action, body) {
-  const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/${action}`, {
+  const response = await reviewerFetch(`/api/cases/${encodeURIComponent(caseId)}/${action}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -9,16 +18,34 @@ async function postCaseAction(caseId, action, body) {
   return responsePayload
 }
 
-export function askLocalAgent(caseId, message) {
-  return postCaseAction(caseId, 'agent', { message })
+export async function askLocalAgent(caseId, message, { onQueue, onActivity, signal } = {}) {
+  const response = await reviewerFetch(`/api/cases/${encodeURIComponent(caseId)}/agent`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
+    body: JSON.stringify({ message }),
+    signal,
+  })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}))
+    throw new Error(payload.error || 'The local service could not queue this prompt.')
+  }
+  return readAgentEventStream(response, onActivity, onQueue)
 }
 
-export function acceptCaseDraft(caseId, reviewerNote = '') {
-  return postCaseAction(caseId, 'accept', { reviewerNote })
+export function acceptCaseDraft(caseId, reviewerNote = '', reviewClaim = null) {
+  return postCaseAction(caseId, 'accept', {
+    reviewerNote,
+    reviewItemId: reviewClaim?.id,
+    claimVersion: reviewClaim?.claimVersion,
+  })
 }
 
-export function rejectCaseDraft(caseId, comment) {
-  return postCaseAction(caseId, 'reject', { comment })
+export function rejectCaseDraft(caseId, comment, reviewClaim = null) {
+  return postCaseAction(caseId, 'reject', {
+    comment,
+    reviewItemId: reviewClaim?.id,
+    claimVersion: reviewClaim?.claimVersion,
+  })
 }
 
 export async function getProposalLineage(caseId) {
@@ -26,6 +53,13 @@ export async function getProposalLineage(caseId) {
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.error || 'The proposal history could not be loaded.')
   return payload.proposals ?? []
+}
+
+export async function getCaseConversation(caseId, { signal } = {}) {
+  const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/conversation`, { signal })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || 'The shared case conversation could not be loaded.')
+  return payload.messages ?? []
 }
 
 export async function getProposalAuditInfo() {
@@ -52,6 +86,24 @@ export async function getQaIssueCatalog() {
   return payload
 }
 
+export async function getQaIssueAtlas({ signal } = {}) {
+  const response = await fetch('/api/qa/atlas', { signal })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || 'The QA issue map could not be loaded.')
+  return payload
+}
+
+export async function refreshQaIssueAtlas({ signal } = {}) {
+  const response = await fetch('/api/qa/atlas/refresh', {
+    method: 'POST',
+    headers: { 'x-mad-local-action': 'refresh-qa-atlas' },
+    signal,
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || 'The QA issue map could not be refreshed.')
+  return payload
+}
+
 export async function getQaIssueRecords(viewId, { signal } = {}) {
   const response = await fetch(`/api/qa/issues/${encodeURIComponent(viewId)}/records`, { signal })
   const payload = await response.json().catch(() => ({}))
@@ -60,17 +112,17 @@ export async function getQaIssueRecords(viewId, { signal } = {}) {
 }
 
 export async function getQaBatchDashboard({ signal } = {}) {
-  const response = await fetch('/api/qa/batches', { signal })
+  const response = await reviewerFetch('/api/qa/batches', { signal })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.error || 'The persistent QA batch queue could not be loaded.')
   return payload
 }
 
-export async function createQaBatch(viewId, recordIds) {
-  const response = await fetch('/api/qa/batches', {
+export async function createQaBatch(viewId, recordIds, recordPrompts = {}) {
+  const response = await reviewerFetch('/api/qa/batches', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ viewId, recordIds }),
+    body: JSON.stringify({ viewId, recordIds, recordPrompts }),
   })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.error || 'The selected QA rows could not be queued.')
@@ -78,7 +130,7 @@ export async function createQaBatch(viewId, recordIds) {
 }
 
 export async function controlQaBatch(jobId, action) {
-  const response = await fetch(
+  const response = await reviewerFetch(
     `/api/qa/batches/${encodeURIComponent(jobId)}/${encodeURIComponent(action)}`,
     { method: 'POST' },
   )
@@ -87,10 +139,59 @@ export async function controlQaBatch(jobId, action) {
   return payload
 }
 
+export async function getQaBatchJob(jobId, { signal } = {}) {
+  const response = await fetch(`/api/qa/batches/${encodeURIComponent(jobId)}`, { signal })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || 'The queued QA batch could not be opened.')
+  return payload.job
+}
+
+export function streamQaBatchJob(jobId, { onSnapshot, onActivity, onState, onComplete, onError } = {}) {
+  if (typeof EventSource !== 'function') return () => {}
+  const stream = new EventSource(`/api/qa/batches/${encodeURIComponent(jobId)}/stream`)
+  const read = (handler) => (event) => {
+    try {
+      handler?.(JSON.parse(event.data))
+    } catch {
+      // Ignore malformed stream events; the persistent queue remains the source of truth.
+    }
+  }
+  stream.addEventListener('snapshot', read(onSnapshot))
+  stream.addEventListener('activity', read(onActivity))
+  stream.addEventListener('state', read(onState))
+  stream.addEventListener('complete', read(onComplete))
+  stream.onerror = () => onError?.('The live batch stream disconnected. The queue will continue in the background.')
+  return () => stream.close()
+}
+
 export async function getQaBatchItem(itemId, { signal } = {}) {
   const response = await fetch(`/api/qa/review-inbox/${encodeURIComponent(itemId)}`, { signal })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.error || 'The queued QA result could not be opened.')
+  return payload.item
+}
+
+export async function claimQaBatchItem(itemId, { signal } = {}) {
+  const response = await reviewerFetch(
+    `/api/qa/review-inbox/${encodeURIComponent(itemId)}/claim`,
+    { method: 'POST', signal },
+  )
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || 'This issue could not be claimed for review.')
+  return payload.item
+}
+
+export async function releaseQaBatchItem(itemId, claimVersion) {
+  const response = await reviewerFetch(
+    `/api/qa/review-inbox/${encodeURIComponent(itemId)}/release`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ claimVersion }),
+    },
+  )
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || 'This review claim could not be released.')
   return payload.item
 }
 
@@ -115,7 +216,7 @@ function parseEventBlock(block) {
   return { event, payload: JSON.parse(data.join('\n')) }
 }
 
-export async function readAgentEventStream(response, onActivity) {
+export async function readAgentEventStream(response, onActivity, onQueue) {
   if (!response.body || typeof response.body.getReader !== 'function') {
     return response.json()
   }
@@ -129,6 +230,7 @@ export async function readAgentEventStream(response, onActivity) {
     const message = parseEventBlock(block)
     if (!message) return
     if (message.event === 'activity') onActivity?.(message.payload)
+    if (message.event === 'queue') onQueue?.(message.payload)
     if (message.event === 'complete') result = message.payload
     if (message.event === 'error') {
       throw new Error(message.payload?.message || 'The local agent stream stopped unexpectedly.')
@@ -148,18 +250,21 @@ export async function readAgentEventStream(response, onActivity) {
   return result
 }
 
-export async function investigateQaIssue(viewId, { recordId, onActivity, signal } = {}) {
-  const response = await fetch(`/api/qa/issues/${encodeURIComponent(viewId)}/investigate-stream`, {
+export async function investigateQaIssue(
+  viewId,
+  { recordId, reviewerContext = '', onActivity, onQueue, signal } = {},
+) {
+  const response = await reviewerFetch(`/api/qa/issues/${encodeURIComponent(viewId)}/investigate-stream`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
-    body: JSON.stringify({ recordId }),
+    body: JSON.stringify({ recordId, reviewerContext }),
     signal,
   })
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}))
     throw new Error(payload.error || 'The local agent could not investigate this QA category.')
   }
-  return readAgentEventStream(response, onActivity)
+  return readAgentEventStream(response, onActivity, onQueue)
 }
 
 export async function getTownExtract(url, { signal } = {}) {

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
+import { REVIEWER_SESSION_STORAGE_KEY } from './lib/reviewerSession'
 
 vi.mock('./components/MapWorkspace', () => ({
   default: ({
@@ -91,6 +92,22 @@ vi.mock('./components/MapWorkspace', () => ({
           {!publicSnapshot && <button type="button" onClick={onShowAgent}>Open local agent</button>}
         </>
       )}
+    </section>
+  ),
+}))
+
+vi.mock('./components/QaIssueAtlas', () => ({
+  default: ({ manifest, onRefresh, onOpenIssue, onRunIssue }) => (
+    <section aria-label="QA issue map">
+      <h1>Affected feature atlas</h1>
+      <span>{manifest ? `${manifest.featureCount} mapped features` : 'Loading atlas'}</span>
+      <button type="button" onClick={onRefresh}>Refresh QA map</button>
+      {manifest?.items?.[0] ? (
+        <>
+          <button type="button" onClick={() => onOpenIssue(manifest.items[0])}>Review atlas issue</button>
+          <button type="button" onClick={() => onRunIssue(manifest.items[0])}>Run atlas issue</button>
+        </>
+      ) : null}
     </section>
   ),
 }))
@@ -225,6 +242,19 @@ const emptyQaBatchDashboard = {
   },
 }
 
+const qaAtlasManifest = {
+  kind: 'mad-qa-issue-atlas',
+  version: '20260726162030123',
+  featureCount: 1,
+  issueCount: 1,
+  items: [{
+    issue_id: rockportQaCase.id,
+    view_id: 'MADV_QA_ASL_DUPES',
+    record_id: rockportQaCase.id,
+    address: '8 Alpaca Court',
+  }],
+}
+
 const qaBatchDashboard = {
   ...emptyQaBatchDashboard,
   worker: { concurrency: 1, active: true, model: 'qwen3-4b-thinking-2507' },
@@ -289,6 +319,10 @@ async function selectTrainingCase(user, name = '147 Brookline Street') {
 describe('MAD QA feature explorer', () => {
   beforeEach(() => {
     window.localStorage.clear()
+    window.localStorage.setItem(REVIEWER_SESSION_STORAGE_KEY, JSON.stringify({
+      id: 'reviewer-test',
+      name: 'TR',
+    }))
     vi.stubGlobal('fetch', vi.fn((url) => {
       if (url === '/api/qa/issues') {
         return Promise.resolve({ ok: true, json: async () => qaCatalog })
@@ -303,6 +337,21 @@ describe('MAD QA feature explorer', () => {
     vi.unstubAllGlobals()
   })
 
+  it('requires compact reviewer initials before opening the shared workbench', async () => {
+    window.localStorage.clear()
+    const user = userEvent.setup()
+    render(<App />)
+
+    expect(screen.getByRole('heading', { name: 'Identify your review session' })).toBeInTheDocument()
+    const initials = screen.getByRole('textbox', { name: 'Reviewer initials' })
+    await user.type(initials, 'm1m')
+    expect(initials).toHaveValue('MM')
+    await user.click(screen.getByRole('button', { name: 'Enter workbench' }))
+
+    expect(screen.getByRole('heading', { name: 'MAD QA' })).toBeInTheDocument()
+    expect(JSON.parse(window.localStorage.getItem(REVIEWER_SESSION_STORAGE_KEY)).name).toBe('MM')
+  })
+
   it('opens on the non-zero QA queue without a dense inspector', async () => {
     render(<App />)
 
@@ -311,6 +360,45 @@ describe('MAD QA feature explorer', () => {
     expect(screen.getByRole('heading', { name: 'Select a non-zero QA check' })).toBeInTheDocument()
     expect(screen.getByText('Structure lookup records that are functionally duplicative')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Attributes' })).not.toBeInTheDocument()
+  })
+
+  it('opens the issue atlas from the start page and queues its exact QA row', async () => {
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (url === '/api/qa/issues') {
+        return Promise.resolve({ ok: true, json: async () => qaCatalog })
+      }
+      if (url === '/api/qa/atlas') {
+        return Promise.resolve({ ok: true, json: async () => qaAtlasManifest })
+      }
+      if (url === '/api/qa/batches' && options.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ dashboard: qaBatchDashboard }),
+        })
+      }
+      if (url === '/api/qa/batches') {
+        return Promise.resolve({ ok: true, json: async () => emptyQaBatchDashboard })
+      }
+      return Promise.resolve({ ok: false, json: async () => ({}) })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: /view affected features/i }))
+    expect(await screen.findByRole('heading', { name: 'Affected feature atlas' })).toBeInTheDocument()
+    expect(screen.getByText('1 mapped features')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Run atlas issue' }))
+    expect(await screen.findByRole('heading', { name: 'Batch queue' })).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith('/api/qa/batches', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        viewId: 'MADV_QA_ASL_DUPES',
+        recordIds: [rockportQaCase.id],
+        recordPrompts: {},
+      }),
+    }))
   })
 
   it('sends selected QA rows to the persistent bridge queue', async () => {
@@ -345,6 +433,46 @@ describe('MAD QA feature explorer', () => {
       body: JSON.stringify({
         viewId: 'MADV_QA_ASL_DUPES',
         recordIds: [rockportQaCase.id, 'MADV_QA_ASL_DUPES-MOCK-0002'],
+        recordPrompts: {},
+      }),
+    }))
+  })
+
+  it('attaches reviewer context to only the selected QA record before it is queued', async () => {
+    vi.stubGlobal('fetch', vi.fn((url, options = {}) => {
+      if (url === '/api/qa/issues') return Promise.resolve({ ok: true, json: async () => qaCatalog })
+      if (url === '/api/qa/batches' && options.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ job: qaBatchDashboard.jobs[0], dashboard: qaBatchDashboard }),
+        })
+      }
+      if (url === '/api/qa/batches') return Promise.resolve({ ok: true, json: async () => emptyQaBatchDashboard })
+      if (url === '/api/qa/issues/MADV_QA_ASL_DUPES/records') {
+        return Promise.resolve({ ok: true, json: async () => qaRecordPage })
+      }
+      return Promise.resolve({ ok: false, json: async () => ({}) })
+    }))
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: /Structure lookup records that are functionally duplicative/ }))
+    await user.click(await screen.findByRole('button', { name: /Add agent context for 8 Alpaca Court, Rockport/ }))
+    await user.type(screen.getByLabelText('Context for the agent'), 'Check the municipal source before staging a change.')
+    await user.click(screen.getByRole('button', { name: 'Save context' }))
+    expect(screen.getByRole('button', { name: /Edit agent context for 8 Alpaca Court, Rockport/ })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('checkbox', { name: /Select 8 Alpaca Court, Rockport/ }))
+    await user.click(screen.getByRole('button', { name: 'Queue 1 selected' }))
+
+    expect(globalThis.fetch).toHaveBeenCalledWith('/api/qa/batches', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        viewId: 'MADV_QA_ASL_DUPES',
+        recordIds: [rockportQaCase.id],
+        recordPrompts: {
+          [rockportQaCase.id]: 'Check the municipal source before staging a change.',
+        },
       }),
     }))
   })
@@ -365,8 +493,49 @@ describe('MAD QA feature explorer', () => {
     expect(await screen.findByRole('heading', { name: 'Review inbox' })).toBeInTheDocument()
     expect(screen.getByText('Completed investigations arrive here while remaining batches continue.')).toBeInTheDocument()
     expect(screen.getByText('Delete one functionally duplicate structure lookup row.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Open review/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Claim & review/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '1 active' })).toBeInTheDocument()
+  })
+
+  it('opens the current queued record with its persisted agent transcript', async () => {
+    const batchJob = {
+      ...qaBatchDashboard.jobs[0],
+      items: [
+        {
+          id: 'BATCH-20260725-TEST0001-001',
+          status: 'ready',
+          record: qaRecordPage.rows[0],
+          transcript: [],
+        },
+        {
+          id: 'BATCH-20260725-TEST0001-002',
+          status: 'running',
+          record: qaRecordPage.rows[1],
+          transcript: [
+            { id: 'model-1', type: 'model', phase: 'completed', turn: 1, title: 'Model turn 1' },
+            { id: 'reasoning-1', type: 'reasoning_delta', turn: 1, text: 'Checking the address relationship.' },
+            { id: 'skill-1', type: 'skill', phase: 'completed', name: 'load_skill', title: 'Skill loaded on demand' },
+          ],
+        },
+      ],
+    }
+    vi.stubGlobal('fetch', vi.fn((url) => {
+      if (url === '/api/qa/issues') return Promise.resolve({ ok: true, json: async () => qaCatalog })
+      if (url === '/api/qa/batches') return Promise.resolve({ ok: true, json: async () => qaBatchDashboard })
+      if (url === '/api/qa/batches/BATCH-20260725-TEST0001') {
+        return Promise.resolve({ ok: true, json: async () => ({ job: batchJob }) })
+      }
+      return Promise.resolve({ ok: false, json: async () => ({}) })
+    }))
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: /Batch queue/ }))
+    await user.click(screen.getByRole('button', { name: /View live agent output for/ }))
+
+    expect(await screen.findByRole('heading', { name: 'Structure lookup records that are functionally duplicative' })).toBeInTheDocument()
+    expect(screen.getByText('Checking the address relationship.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Back to batch queue' })).toBeInTheDocument()
   })
 
   it('previews a bounded related-feature map before starting the agent', async () => {
@@ -594,7 +763,7 @@ describe('MAD QA feature explorer', () => {
     expect(await screen.findByText('Town extract workspace for Rockport')).toBeInTheDocument()
     expect(globalThis.fetch).toHaveBeenCalledWith(
       '/api/qa/issues/MADV_QA_ASL_DUPES/investigate-stream',
-      expect.objectContaining({ body: JSON.stringify({ recordId: rockportQaCase.id }) }),
+      expect.objectContaining({ body: JSON.stringify({ recordId: rockportQaCase.id, reviewerContext: '' }) }),
     )
     expect(await screen.findByText('8 Alpaca Court')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Show agent diff' }))
