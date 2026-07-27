@@ -16,12 +16,17 @@ import {
   getSkillIndex,
   finalizeAgentReply,
   loadSkill,
+  MAX_AGENT_TURNS,
   normalizeLmStudioDelta,
   openProposalAuditInFileExplorer,
   recordReviewerRejection,
   runCaseAgent,
   validateDraft,
 } from './agent-server.mjs'
+
+test('allows up to sixteen local agent turns', () => {
+  assert.equal(MAX_AGENT_TURNS, 16)
+})
 
 test('reports the fixed local proposal audit CSV without accepting a client path', () => {
   const info = getProposalAuditInfo()

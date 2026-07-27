@@ -51,7 +51,7 @@ import {
 
 const DEFAULT_LM_STUDIO_URL = 'http://127.0.0.1:1234/v1'
 const DEFAULT_MODEL = 'gemma-4-e4b-it'
-const MAX_AGENT_TURNS = 8
+export const MAX_AGENT_TURNS = 16
 const MAX_REQUEST_BYTES = 24 * 1024
 const MAX_REVIEWER_COMMENT = 1200
 const MAX_QA_RECORD_CONTEXT = 1200
