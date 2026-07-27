@@ -79,8 +79,13 @@ account and have everyone open
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
   -File '.\scripts\start-shared-workbench.ps1' `
   -PythonPath 'C:\absolute\path\to\python.exe' `
-  -Model 'gemma-4-e4b-it'
+  -Model '<installed-model-key>'
 ```
+
+The launcher discovers installed LM Studio LLMs. It selects the model
+automatically when only one is installed and prompts when several are available.
+The shared unattended example passes `-Model` explicitly so it cannot pause for
+input during machine startup.
 
 ```powershell
 npm test

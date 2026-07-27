@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [string]$Model = 'gemma-4-e4b-it',
+  [string]$Model,
   [ValidateSet('enabled', 'disabled')]
   [string]$RockportFaults = 'enabled',
   [switch]$NoBrowser
@@ -11,6 +11,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $agentPort = 8787
 $appPort = 4173
 $lmStudioPort = 1234
+. (Join-Path $PSScriptRoot 'lm-studio-model-selection.ps1')
 
 function Test-LocalUrl {
   param([Parameter(Mandatory = $true)][string]$Url)
@@ -123,7 +124,8 @@ function Reset-LmStudioModel {
     throw 'LM Studio could not report its loaded models.'
   }
   try {
-    $loadedModels = @($loadedJson | ConvertFrom-Json)
+    $parsedLoadedModels = $loadedJson | ConvertFrom-Json
+    $loadedModels = @($parsedLoadedModels)
   } catch {
     throw "LM Studio returned an unreadable loaded-model list: $($_.Exception.Message)"
   }
@@ -197,11 +199,23 @@ try {
     Wait-ForLocalUrl -Url "http://127.0.0.1:$lmStudioPort/v1/models" -ServiceName 'LM Studio'
   }
 
+  $agentSourceVersion = Get-AgentSourceVersion
+  $agentHealth = Get-AgentBridgeHealth
+  $agentBridgeReusable = (Test-PortListener -Port $agentPort) -and
+    $agentHealth -and
+    $agentHealth.serviceId -eq 'mad-qa-agent-bridge' -and
+    $agentHealth.sourceVersion -eq $agentSourceVersion -and
+    $agentHealth.rockportFaults -eq $RockportFaults
+  $availableModels = @(Get-LmStudioAvailableModels -LmsPath $lms.Source)
+  $preferredModel = if ($agentBridgeReusable) { [string]$agentHealth.model } else { '' }
+  $Model = Select-LmStudioModel `
+    -AvailableModels $availableModels `
+    -RequestedModel $Model `
+    -PreferredModel $preferredModel
+
   $env:LM_STUDIO_MODEL = $Model
   $env:MAD_ROCKPORT_FAULTS = if ($RockportFaults -eq 'enabled') { '1' } else { '0' }
-  $agentSourceVersion = Get-AgentSourceVersion
   $env:MAD_AGENT_SOURCE_VERSION = $agentSourceVersion
-  $agentHealth = Get-AgentBridgeHealth
   $agentBridgeCurrent = $agentHealth -and
     $agentHealth.serviceId -eq 'mad-qa-agent-bridge' -and
     $agentHealth.sourceVersion -eq $agentSourceVersion -and
@@ -215,7 +229,7 @@ try {
     Write-Host 'Starting the local MAD agent bridge...'
     Start-Process -FilePath $node.Source -ArgumentList @('scripts/agent-server.mjs') -WorkingDirectory $projectRoot -WindowStyle Hidden | Out-Null
   } else {
-    Write-Host 'Using the model already owned by the running MAD agent bridge.'
+    Write-Host "Using the model already owned by the running MAD agent bridge: $Model"
   }
   Wait-ForLocalUrl -Url "http://127.0.0.1:$agentPort/api/health" -ServiceName 'Local MAD agent bridge'
 
